@@ -1,12 +1,24 @@
+# syntax=docker/dockerfile:1
 FROM golang:1.22-alpine AS builder
+
+ARG CGO_ENABLED=0
+ARG GOOS=linux
+ARG GOARCH=amd64
+
 WORKDIR /app
+
 COPY go.mod go.sum ./
 RUN go mod download
+
 COPY cmd/consumer ./cmd/consumer
 COPY pkg/ ./pkg/
-RUN go build -o /consumer ./cmd/consumer
 
-FROM alpine:latest
+RUN go build -ldflags="-s -w" -o /consumer ./cmd/consumer
+
+FROM alpine:3.20
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /
 COPY --from=builder /consumer /consumer
+USER appuser
 ENTRYPOINT ["/consumer"]
