@@ -25,3 +25,6 @@ go.work.sum
 /manager
 /producer
 /consumer
+.gocache/
+*.html
+benchmark_results.*
