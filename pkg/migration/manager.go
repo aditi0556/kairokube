@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -47,7 +48,11 @@ func NewManager(
 	if metrics == nil {
 		metrics = NewMetricsCollector()
 	}
-	rm := NewRateMonitor(rmqClient, cfg.MetricsWindow, 20.0)
+	defaultMu := 0.0
+	if cfg.MigrationMode != "pod" && os.Getenv("CONSUMER_STATUS_URL") == "" {
+		defaultMu = 20.0 // explicit test-only mock capacity
+	}
+	rm := NewRateMonitor(rmqClient, cfg.MetricsWindow, defaultMu)
 	rb := NewRollbackManager(wc, metrics)
 
 	return &Manager{

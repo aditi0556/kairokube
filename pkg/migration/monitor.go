@@ -2,6 +2,9 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -15,13 +18,16 @@ type rateSample struct {
 
 // RealTimeRateMonitor tracks dynamic arrival (lambda) and processing (mu) rates over a sliding window.
 type RealTimeRateMonitor struct {
-	mu           sync.Mutex
-	window       time.Duration
-	rmqClient    *rabbitmq.Client
-	arrivalLog   []rateSample
-	processLog   []rateSample
-	defaultMu    float64 // fallback target capacity (e.g. 20 msg/s for 50ms delay)
-	lastQueueLen int64
+	mu              sync.Mutex
+	window          time.Duration
+	rmqClient       *rabbitmq.Client
+	arrivalLog      []rateSample
+	processLog      []rateSample
+	defaultMu       float64
+	consumerURL     string
+	lastProcessed   int64
+	lastProcessedAt time.Time
+	lastQueueLen    int64
 }
 
 // NewRateMonitor creates a new RealTimeRateMonitor.
@@ -29,15 +35,13 @@ func NewRateMonitor(rmqClient *rabbitmq.Client, window time.Duration, defaultMu 
 	if window <= 0 {
 		window = 5 * time.Second
 	}
-	if defaultMu <= 0 {
-		defaultMu = 20.0 // Default 50ms processing delay = 20 msg/s
-	}
 	return &RealTimeRateMonitor{
-		window:     window,
-		rmqClient:  rmqClient,
-		defaultMu:  defaultMu,
-		arrivalLog: make([]rateSample, 0),
-		processLog: make([]rateSample, 0),
+		window:      window,
+		rmqClient:   rmqClient,
+		defaultMu:   defaultMu,
+		consumerURL: os.Getenv("CONSUMER_STATUS_URL"),
+		arrivalLog:  make([]rateSample, 0),
+		processLog:  make([]rateSample, 0),
 	}
 }
 
@@ -87,7 +91,27 @@ func (m *RealTimeRateMonitor) MeasureRates(ctx context.Context, queueName string
 	lambda = float64(totalArrivals) / windowSec
 	mu = float64(totalProcessed) / windowSec
 
-	// If no processing events occurred in the window, use baseline target processing rate
+	// Prefer the live consumer status endpoint when configured.
+	if m.consumerURL != "" {
+		var status struct {
+			MessagesProcessed int64 `json:"messages_processed"`
+		}
+		if resp, reqErr := http.Get(m.consumerURL); reqErr == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&status) == nil {
+				now := time.Now()
+				m.mu.Lock()
+				if !m.lastProcessedAt.IsZero() && status.MessagesProcessed >= m.lastProcessed {
+					delta := now.Sub(m.lastProcessedAt).Seconds()
+					if delta > 0 {
+						mu = float64(status.MessagesProcessed-m.lastProcessed) / delta
+					}
+				}
+				m.lastProcessed, m.lastProcessedAt = status.MessagesProcessed, now
+				m.mu.Unlock()
+			}
+		}
+	}
 	if mu <= 0.001 {
 		mu = m.defaultMu
 	}

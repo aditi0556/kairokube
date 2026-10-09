@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -81,16 +80,12 @@ func main() {
 			state.MessagesReceived++
 			state.mu.Unlock()
 
-			// Decode message
+			// Decode only the application message schema. Invalid deliveries are rejected without inventing IDs or state.
 			msg, err := rabbitmq.DecodeMessage(delivery.Body)
 			if err != nil {
-				// Fallback for plain text messages
-				msg = &rabbitmq.Message{
-					ID:        fmt.Sprintf("raw-%d", time.Now().UnixNano()),
-					Sequence:  0,
-					Timestamp: time.Now().UTC(),
-					Payload:   string(delivery.Body),
-				}
+				log.Printf("Rejecting invalid message: %v", err)
+				_ = delivery.Nack(false, false)
+				continue
 			}
 
 			// Duplicate detection for message replay synchronization
