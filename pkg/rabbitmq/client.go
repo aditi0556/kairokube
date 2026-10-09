@@ -252,3 +252,27 @@ func (c *Client) Consume(queueName string) (<-chan amqp.Delivery, error) {
 
 	return messages, nil
 }
+
+// PublishMessage serializes and publishes a structured Message to the queue with persistent delivery.
+func (c *Client) PublishMessage(queueName string, msg *Message) error {
+	if msg == nil {
+		return fmt.Errorf("message cannot be nil")
+	}
+	body, err := msg.Encode()
+	if err != nil {
+		return fmt.Errorf("failed to encode message: %w", err)
+	}
+	return c.Publish(queueName, string(body))
+}
+
+// InspectQueue inspects queue status and returns current message depth and consumer count.
+func (c *Client) InspectQueue(queueName string) (messages int, consumers int, err error) {
+	if c == nil || c.channel == nil {
+		return 0, 0, fmt.Errorf("RabbitMQ client is not initialized")
+	}
+	q, err := c.channel.QueueInspect(queueName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to inspect queue %q: %w", queueName, err)
+	}
+	return q.Messages, q.Consumers, nil
+}
