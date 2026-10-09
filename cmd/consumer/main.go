@@ -84,6 +84,13 @@ func main() {
 			// Decode message
 			msg, err := rabbitmq.DecodeMessage(delivery.Body)
 			if err != nil {
+				if json.Valid(delivery.Body) {
+					// Do not reinterpret a malformed or unsupported structured schema
+					// as application payload. Return the delivery to RabbitMQ by
+					// closing the consumer connection without acknowledging it.
+					log.Printf("Invalid structured message; stopping consumer with delivery unacknowledged: %v", err)
+					return
+				}
 				// Fallback for plain text messages
 				msg = &rabbitmq.Message{
 					ID:        fmt.Sprintf("raw-%d", time.Now().UnixNano()),

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -57,6 +58,24 @@ func (c *PodWorkloadController) ValidateSource(ctx context.Context, namespace, p
 	if pod.Status.Phase != corev1.PodRunning {
 		return fmt.Errorf("source pod %s/%s is not in Running phase (phase: %s)", namespace, podName, pod.Status.Phase)
 	}
+	if len(pod.OwnerReferences) > 0 {
+		return fmt.Errorf("source pod %s/%s is controller-owned; standalone Pod mode will not delete a workload managed by a controller", namespace, podName)
+	}
+	for _, volume := range pod.Spec.Volumes {
+		if volume.PersistentVolumeClaim != nil || volume.HostPath != nil {
+			return fmt.Errorf("source pod %s/%s uses volume %q with storage semantics that this migration workflow cannot safely hand off", namespace, podName, volume.Name)
+		}
+	}
+	ready := false
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		return fmt.Errorf("source pod %s/%s is not Ready", namespace, podName)
+	}
 	return nil
 }
 
@@ -95,8 +114,12 @@ func (c *PodWorkloadController) PrepareTarget(ctx context.Context, namespace, so
 
 	targetPodName := fmt.Sprintf("%s-target", sourcePod)
 
-	// Check if already exists; if so, delete first
-	_ = c.clientset.CoreV1().Pods(namespace).Delete(ctx, targetPodName, metav1.DeleteOptions{})
+	// Never delete an existing Pod as a convenience; it may be a live workload.
+	if _, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, targetPodName, metav1.GetOptions{}); err == nil {
+		return "", fmt.Errorf("target Pod %s/%s already exists; refusing to delete or overwrite it", namespace, targetPodName)
+	} else if !apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("failed to check target Pod %s/%s: %w", namespace, targetPodName, err)
+	}
 
 	// Construct target Pod spec pinned to targetNode
 	targetPod := &corev1.Pod{
@@ -166,9 +189,14 @@ func (c *PodWorkloadController) VerifyTarget(ctx context.Context, namespace, tar
 }
 
 func (c *PodWorkloadController) RestoreSource(ctx context.Context, namespace, podName string) error {
-	log.Printf("Restoring source pod %s/%s during rollback", namespace, podName)
-	// In pod mode, if deleted, recreating pod spec restores processing
-	return nil
+	if c.clientset == nil {
+		return fmt.Errorf("kubernetes clientset is nil")
+	}
+	if _, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{}); err == nil {
+		return nil
+	} else {
+		return fmt.Errorf("source pod %s/%s is absent and this controller does not retain a safe recreation template: %w", namespace, podName, err)
+	}
 }
 
 func (c *PodWorkloadController) CleanupTarget(ctx context.Context, namespace, targetPod string) error {

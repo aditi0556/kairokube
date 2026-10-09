@@ -1,6 +1,7 @@
 package ms2m
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -110,6 +111,19 @@ func TestCalculateAdaptiveCutoff(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAdaptiveCutoffHandlesInvalidAndOverflowingRates(t *testing.T) {
+	min, max := 100*time.Millisecond, 2*time.Second
+	for _, rates := range [][2]float64{{math.NaN(), 5}, {-1, 5}, {5, math.Inf(1)}, {0.001, math.MaxFloat64}} {
+		res := CalculateAdaptiveCutoff(rates[0], rates[1], time.Second, min, max)
+		if res.CalculatedCutoff < min || res.CalculatedCutoff > max {
+			t.Fatalf("cutoff %s outside bounds [%s, %s] for %v", res.CalculatedCutoff, min, max, rates)
+		}
+		if res.Warning == "" {
+			t.Fatalf("expected warning for invalid/extreme rates %v", rates)
+		}
 	}
 }
 

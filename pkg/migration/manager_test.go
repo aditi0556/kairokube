@@ -3,6 +3,7 @@ package migration
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ func TestEndToEndMigrationSuccess(t *testing.T) {
 		RestoreTimeout:    5 * time.Second,
 		MigrationTimeout:  10 * time.Second,
 		FeasibilityPolicy: "warn",
+		MigrationMode:     "mock",
 		CheckpointDir:     tempDir,
 	}
 
@@ -58,8 +60,8 @@ func TestEndToEndMigrationSuccess(t *testing.T) {
 		t.Fatalf("expected state COMPLETED, got %s", mig.GetState())
 	}
 
-	if metrics.MigrationSuccessTotal != 1 {
-		t.Errorf("expected MigrationSuccessTotal=1, got %d", metrics.MigrationSuccessTotal)
+	if got := atomic.LoadInt64(&metrics.MigrationSuccessTotal); got != 1 {
+		t.Errorf("expected MigrationSuccessTotal=1, got %d", got)
 	}
 }
 
@@ -78,6 +80,7 @@ func TestCheckpointFailureTriggersRollback(t *testing.T) {
 		RestoreTimeout:    5 * time.Second,
 		MigrationTimeout:  10 * time.Second,
 		FeasibilityPolicy: "warn",
+		MigrationMode:     "mock",
 		CheckpointDir:     tempDir,
 	}
 
@@ -109,8 +112,8 @@ func TestCheckpointFailureTriggersRollback(t *testing.T) {
 		t.Fatalf("expected state FAILED after rollback, got %s", mig.GetState())
 	}
 
-	if metrics.MigrationFailureTotal != 1 {
-		t.Errorf("expected MigrationFailureTotal=1, got %d", metrics.MigrationFailureTotal)
+	if got := atomic.LoadInt64(&metrics.MigrationFailureTotal); got != 1 {
+		t.Errorf("expected MigrationFailureTotal=1, got %d", got)
 	}
 }
 
@@ -143,5 +146,17 @@ func TestWorkloadSourceValidationFailure(t *testing.T) {
 
 	if mig.GetState() != StateFailed {
 		t.Fatalf("expected FAILED on source validation failure, got %s", mig.GetState())
+	}
+}
+
+func TestManagerRejectsConcurrentMigrationForSameSource(t *testing.T) {
+	mgr := NewManager(&config.Config{MigrationMode: "mock"}, nil, nil,
+		checkpoint.NewMockCheckpointProvider(""), &transfer.MockTransferProvider{},
+		NewMockWorkloadController(), NewMetricsCollector())
+	if _, err := mgr.CreateMigration("consumer-0", "default", "worker-1"); err != nil {
+		t.Fatalf("first migration was rejected: %v", err)
+	}
+	if _, err := mgr.CreateMigration("consumer-0", "default", "worker-2"); err == nil {
+		t.Fatal("expected concurrent migration for the same source Pod to be rejected")
 	}
 }

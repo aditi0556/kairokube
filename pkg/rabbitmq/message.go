@@ -13,6 +13,7 @@ import (
 
 // Message represents the standard structured message payload used in the MS2M microservice pipeline.
 type Message struct {
+	Version   int       `json:"version"`
 	ID        string    `json:"id"`
 	Sequence  int64     `json:"sequence"`
 	Timestamp time.Time `json:"timestamp"`
@@ -22,6 +23,7 @@ type Message struct {
 // NewMessage constructs a message with a unique UUID, monotonic sequence number, and timestamp.
 func NewMessage(sequence int64, payload string) *Message {
 	return &Message{
+		Version:   1,
 		ID:        uuid.New().String(),
 		Sequence:  sequence,
 		Timestamp: time.Now().UTC(),
@@ -42,6 +44,13 @@ func DecodeMessage(data []byte) (*Message, error) {
 	}
 	if msg.ID == "" {
 		return nil, fmt.Errorf("invalid message: missing id")
+	}
+	if msg.Version != 0 && msg.Version != 1 {
+		return nil, fmt.Errorf("unsupported message schema version %d", msg.Version)
+	}
+	// Version zero is accepted as the legacy unversioned schema.
+	if msg.Version == 0 {
+		msg.Version = 1
 	}
 	return &msg, nil
 }

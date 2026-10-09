@@ -18,4 +18,7 @@ spec:
         imagePullPolicy: Never
         env:
         - name: RABBITMQ_URL
-          value: "amqp://guest:guest@rabbitmq:5672/"
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: url

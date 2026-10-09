@@ -15,6 +15,17 @@ spec:
       containers:
       - name: rabbitmq
         image: rabbitmq:3.13-management
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: username
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: password
         ports:
         - containerPort: 5672
         - containerPort: 15672
