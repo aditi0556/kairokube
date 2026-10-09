@@ -83,9 +83,26 @@ func main() {
 			// Decode only the application message schema. Invalid deliveries are rejected without inventing IDs or state.
 			msg, err := rabbitmq.DecodeMessage(delivery.Body)
 			if err != nil {
+<<<<<<< HEAD
 				log.Printf("Rejecting invalid message: %v", err)
 				_ = delivery.Nack(false, false)
 				continue
+=======
+				if json.Valid(delivery.Body) {
+					// Do not reinterpret a malformed or unsupported structured schema
+					// as application payload. Return the delivery to RabbitMQ by
+					// closing the consumer connection without acknowledging it.
+					log.Printf("Invalid structured message; stopping consumer with delivery unacknowledged: %v", err)
+					return
+				}
+				// Fallback for plain text messages
+				msg = &rabbitmq.Message{
+					ID:        fmt.Sprintf("raw-%d", time.Now().UnixNano()),
+					Sequence:  0,
+					Timestamp: time.Now().UTC(),
+					Payload:   string(delivery.Body),
+				}
+>>>>>>> 7c54a60f3599d85ad3625f5e47308905ef936326
 			}
 
 			// Duplicate detection for message replay synchronization

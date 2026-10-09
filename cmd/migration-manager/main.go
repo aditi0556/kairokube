@@ -22,6 +22,9 @@ func main() {
 	log.Println("Initializing MS2M Migration Manager...")
 
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
 
 	sourcePodFlag := flag.String("source", "", "Source Pod name to migrate (optional CLI mode)")
 	targetNodeFlag := flag.String("target", "", "Target node name (optional CLI mode)")
@@ -32,22 +35,30 @@ func main() {
 	// 1. Initialize Kubernetes Client
 	k8sClient, err := k8s.NewClient()
 	if err != nil {
-		log.Printf("Notice: Running outside live cluster or without in-cluster credentials (%v); using mock controllers for local operations", err)
+		if cfg.MigrationMode == "pod" || cfg.CheckpointProvider == "kubelet" {
+			log.Fatalf("Kubernetes is required by MIGRATION_MODE=%q or CHECKPOINT_PROVIDER=%q: %v", cfg.MigrationMode, cfg.CheckpointProvider, err)
+		}
+		log.Printf("Using explicitly selected mock workload controller; Kubernetes client unavailable: %v", err)
 	} else {
 		log.Println("Kubernetes client initialized successfully")
 	}
 
 	// 2. Initialize Checkpoint Provider
 	var cp checkpoint.CheckpointProvider
-	if cfg.CheckpointProvider == "kubelet" && k8sClient != nil {
+	if cfg.CheckpointProvider == "kubelet" {
+		if k8sClient == nil {
+			log.Fatal("CHECKPOINT_PROVIDER=kubelet requires a working Kubernetes client")
+		}
 		log.Printf("Configuring Kubelet FCC Checkpoint Provider (port %d)", cfg.KubeletPort)
 		cp = checkpoint.NewKubeletFCCProvider(k8sClient.Clientset, k8sClient.RestConfig, checkpoint.KubeletFCCConfig{
 			UseNodeProxy: true,
 			KubeletPort:  cfg.KubeletPort,
 		})
-	} else {
-		log.Printf("Configuring Mock/Local Checkpoint Provider in directory %s", cfg.CheckpointDir)
+	} else if cfg.CheckpointProvider == "mock" {
+		log.Printf("Configuring MOCK checkpoint provider in directory %s; this is simulated state, not a process checkpoint", cfg.CheckpointDir)
 		cp = checkpoint.NewMockCheckpointProvider(cfg.CheckpointDir)
+	} else {
+		log.Fatalf("Unsupported checkpoint provider %q", cfg.CheckpointProvider)
 	}
 
 	// 3. Initialize Transfer Provider
@@ -60,7 +71,9 @@ func main() {
 
 	// 4. Initialize Workload Controller
 	var wc migration.WorkloadController
-	if k8sClient != nil && k8sClient.Clientset != nil {
+	if cfg.MigrationMode == "mock" {
+		wc = migration.NewMockWorkloadController()
+	} else if k8sClient != nil && k8sClient.Clientset != nil {
 		if cfg.MigrationMode == "statefulset" {
 			log.Println("Configuring StatefulSet workload controller")
 			wc = migration.NewStatefulSetWorkloadController(k8sClient.Clientset)
@@ -69,14 +82,13 @@ func main() {
 			wc = migration.NewPodWorkloadController(k8sClient.Clientset)
 		}
 	} else {
-		log.Println("Configuring in-memory mock workload controller")
-		wc = migration.NewMockWorkloadController()
+		log.Fatal("No workload controller available; select MIGRATION_MODE=mock for local simulation")
 	}
 
 	// 5. Initialize RabbitMQ Client
 	rmqClient, err := rabbitmq.NewClient(cfg.RabbitMQURL)
 	if err != nil {
-		log.Printf("Notice: RabbitMQ not reachable at %s (%v); rate monitor will use simulated baseline capacity", cfg.RabbitMQURL, err)
+		log.Fatalf("RabbitMQ is required for migration measurements and workload messaging (%s): %v", cfg.RabbitMQURL, err)
 	} else {
 		log.Println("Connected to RabbitMQ broker successfully")
 		defer rmqClient.Close()

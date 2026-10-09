@@ -28,10 +28,11 @@ type ExperimentResult struct {
 	TransferDurationSec   float64 `json:"transfer_duration_seconds"`
 	RestoreDurationSec    float64 `json:"restore_duration_seconds"`
 	ReplayDurationSec     float64 `json:"replay_duration_seconds"`
-	QueueDepth            int64   `json:"queue_depth"`
-	MessagesReplayed      int64   `json:"messages_replayed"`
-	DuplicatesDetected    int64   `json:"duplicates_detected"`
 	Status                string  `json:"status"`
+	RunKind               string  `json:"run_kind"`
+	QueueDepth            *int64  `json:"queue_depth,omitempty"`
+	MessagesReplayed      *int64  `json:"messages_replayed,omitempty"`
+	DuplicatesDetected    *int64  `json:"duplicates_detected,omitempty"`
 }
 
 func main() {
@@ -75,7 +76,7 @@ func main() {
 			"TargetRateLambda", "MeasuredLambda", "MeasuredMu", "Utilization",
 			"CalculatedCutoffSec", "TotalMigrationTimeSec", "DowntimeSec",
 			"CheckpointDurationSec", "TransferDurationSec", "RestoreDurationSec",
-			"ReplayDurationSec", "QueueDepth", "MessagesReplayed", "DuplicatesDetected", "Status",
+			"ReplayDurationSec", "QueueDepth", "MessagesReplayed", "DuplicatesDetected", "Status", "RunKind",
 		})
 		for _, r := range results {
 			_ = w.Write([]string{
@@ -90,10 +91,11 @@ func main() {
 				fmt.Sprintf("%.3f", r.TransferDurationSec),
 				fmt.Sprintf("%.3f", r.RestoreDurationSec),
 				fmt.Sprintf("%.3f", r.ReplayDurationSec),
-				fmt.Sprintf("%d", r.QueueDepth),
-				fmt.Sprintf("%d", r.MessagesReplayed),
-				fmt.Sprintf("%d", r.DuplicatesDetected),
+				formatInt(r.QueueDepth),
+				formatInt(r.MessagesReplayed),
+				formatInt(r.DuplicatesDetected),
 				r.Status,
+				r.RunKind,
 			})
 		}
 		w.Flush()
@@ -111,6 +113,13 @@ func main() {
 			r.TransferDurationSec, r.ReplayDurationSec, r.Status)
 	}
 	fmt.Println("========================================================================================================================")
+}
+
+func formatInt(value *int64) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *value)
 }
 
 func runExperiment(targetLambda float64, tempDir string) ExperimentResult {
@@ -147,6 +156,7 @@ func runExperiment(targetLambda float64, tempDir string) ExperimentResult {
 		return ExperimentResult{
 			TargetRateLambda: targetLambda,
 			Status:           fmt.Sprintf("FAILED: %v", err),
+			RunKind:          "mock_simulation",
 		}
 	}
 
@@ -178,9 +188,7 @@ func runExperiment(targetLambda float64, tempDir string) ExperimentResult {
 		TransferDurationSec:   snap.TransferDuration.Seconds(),
 		RestoreDurationSec:    snap.RestoreDuration.Seconds(),
 		ReplayDurationSec:     snap.ReplayDuration.Seconds(),
-		QueueDepth:            0,
-		MessagesReplayed:      int64(targetLambda * snap.ReplayDuration.Seconds()),
-		DuplicatesDetected:    0,
 		Status:                status,
+		RunKind:               "mock_simulation_synthetic_rates",
 	}
 }

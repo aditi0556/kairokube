@@ -4,6 +4,7 @@ package ms2m
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -46,7 +47,11 @@ func CalculateAdaptiveCutoff(lambda, mu float64, tReplayMax, minCutoff, maxCutof
 		minCutoff = 500 * time.Millisecond
 	}
 	if maxCutoff <= minCutoff {
-		maxCutoff = minCutoff + 30*time.Second
+		if minCutoff <= time.Duration(math.MaxInt64)-30*time.Second {
+			maxCutoff = minCutoff + 30*time.Second
+		} else {
+			maxCutoff = minCutoff
+		}
 	}
 	if tReplayMax <= 0 {
 		tReplayMax = 5 * time.Second
@@ -56,6 +61,14 @@ func CalculateAdaptiveCutoff(lambda, mu float64, tReplayMax, minCutoff, maxCutof
 		Lambda:        lambda,
 		MuTarget:      mu,
 		MaxReplayTime: tReplayMax,
+	}
+	if math.IsNaN(lambda) || math.IsInf(lambda, 0) || math.IsNaN(mu) || math.IsInf(mu, 0) || lambda < 0 {
+		result.Lambda = 0
+		result.MuTarget = 0
+		result.CalculatedCutoff = minCutoff
+		result.IsClamped = true
+		result.Warning = "arrival or processing rate is invalid; clamped to min cutoff"
+		return result
 	}
 
 	// Safeguard 1: Target cannot process messages (mu <= 0)
@@ -82,8 +95,21 @@ func CalculateAdaptiveCutoff(lambda, mu float64, tReplayMax, minCutoff, maxCutof
 
 	// MS2M derivation: T_cutoff = T_replay_max * (mu / lambda)
 	ratio := mu / lambda
-	rawCutoffSeconds := float64(tReplayMax.Nanoseconds()) / 1e9 * ratio
-	rawCutoff := time.Duration(rawCutoffSeconds * 1e9)
+	rawCutoffSeconds := tReplayMax.Seconds() * ratio
+	if math.IsNaN(rawCutoffSeconds) || math.IsInf(rawCutoffSeconds, 0) || rawCutoffSeconds >= maxCutoff.Seconds() {
+		result.CalculatedCutoff = maxCutoff
+		result.IsClamped = true
+		if result.Warning == "" {
+			result.Warning = "calculated cutoff exceeds representable or configured maximum; clamped to max cutoff"
+		}
+		return result
+	}
+	if rawCutoffSeconds <= minCutoff.Seconds() {
+		result.CalculatedCutoff = minCutoff
+		result.IsClamped = true
+		return result
+	}
+	rawCutoff := time.Duration(rawCutoffSeconds * float64(time.Second))
 
 	// Safeguard 3: Congested system (mu <= lambda)
 	if mu <= lambda {

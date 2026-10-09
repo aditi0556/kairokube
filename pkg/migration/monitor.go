@@ -91,6 +91,7 @@ func (m *RealTimeRateMonitor) MeasureRates(ctx context.Context, queueName string
 	lambda = float64(totalArrivals) / windowSec
 	mu = float64(totalProcessed) / windowSec
 
+<<<<<<< HEAD
 	// Prefer the live consumer status endpoint when configured.
 	if m.consumerURL != "" {
 		var status struct {
@@ -113,6 +114,11 @@ func (m *RealTimeRateMonitor) MeasureRates(ctx context.Context, queueName string
 		}
 	}
 	if mu <= 0.001 {
+=======
+	// A configured baseline is only meaningful when the caller explicitly supplies
+	// one (for example, a labeled simulation). Never invent a processing rate.
+	if mu <= 0.001 && m.defaultMu > 0 {
+>>>>>>> 7c54a60f3599d85ad3625f5e47308905ef936326
 		mu = m.defaultMu
 	}
 

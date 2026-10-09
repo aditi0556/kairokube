@@ -78,20 +78,21 @@ func (m *MetricsCollector) RecordMigrationRun(mig *Migration) {
 	if mig == nil {
 		return
 	}
+	snapshot := mig.Snapshot()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if mig.EndTime.After(mig.StartTime) {
-		m.MigrationDurationSeconds = mig.EndTime.Sub(mig.StartTime).Seconds()
+	if snapshot.EndTime.After(snapshot.StartTime) {
+		m.MigrationDurationSeconds = snapshot.EndTime.Sub(snapshot.StartTime).Seconds()
 	}
-	m.MigrationDowntimeSeconds = mig.Downtime.Seconds()
-	m.CheckpointDurationSeconds = mig.CheckpointDuration.Seconds()
-	m.CheckpointSizeBytes = mig.CheckpointSize
-	m.CheckpointTransferSeconds = mig.TransferDuration.Seconds()
-	m.RestoreDurationSeconds = mig.RestoreDuration.Seconds()
-	m.ReplayDurationSeconds = mig.ReplayDuration.Seconds()
-	m.MessageArrivalRate = mig.Lambda
-	m.MessageProcessingRate = mig.MuTarget
+	m.MigrationDowntimeSeconds = snapshot.Downtime.Seconds()
+	m.CheckpointDurationSeconds = snapshot.CheckpointDuration.Seconds()
+	m.CheckpointSizeBytes = snapshot.CheckpointSize
+	m.CheckpointTransferSeconds = snapshot.TransferDuration.Seconds()
+	m.RestoreDurationSeconds = snapshot.RestoreDuration.Seconds()
+	m.ReplayDurationSeconds = snapshot.ReplayDuration.Seconds()
+	m.MessageArrivalRate = snapshot.Lambda
+	m.MessageProcessingRate = snapshot.MuTarget
 }
 
 // SetQueueDepth updates current queue depth gauge.

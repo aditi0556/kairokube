@@ -48,9 +48,17 @@ func NewManager(
 	if metrics == nil {
 		metrics = NewMetricsCollector()
 	}
+<<<<<<< HEAD
 	defaultMu := 0.0
 	if cfg.MigrationMode != "pod" && os.Getenv("CONSUMER_STATUS_URL") == "" {
 		defaultMu = 20.0 // explicit test-only mock capacity
+=======
+	// The mock workflow's documented 20 msg/s capacity is a simulation baseline.
+	// Real/pod mode has no fallback; until observations exist, mu remains zero.
+	defaultMu := 0.0
+	if cfg.MigrationMode == "mock" {
+		defaultMu = 20
+>>>>>>> 7c54a60f3599d85ad3625f5e47308905ef936326
 	}
 	rm := NewRateMonitor(rmqClient, cfg.MetricsWindow, defaultMu)
 	rb := NewRollbackManager(wc, metrics)
@@ -69,7 +77,8 @@ func NewManager(
 	}
 }
 
-// CreateMigration creates a new migration tracking record in IDLE state.
+// CreateMigration creates a new migration tracking record in IDLE state and
+// rejects a second active migration for the same namespace and source Pod.
 func (mgr *Manager) CreateMigration(sourcePod, namespace, targetNode string) (*Migration, error) {
 	if sourcePod == "" {
 		return nil, fmt.Errorf("source_pod cannot be empty")
@@ -82,6 +91,14 @@ func (mgr *Manager) CreateMigration(sourcePod, namespace, targetNode string) (*M
 	}
 
 	mgr.mu.Lock()
+	for _, active := range mgr.migrations {
+		snapshot := active.Snapshot()
+		if snapshot.Namespace == namespace && snapshot.SourcePod == sourcePod &&
+			snapshot.State != StateCompleted && snapshot.State != StateFailed {
+			mgr.mu.Unlock()
+			return nil, fmt.Errorf("migration %s is already active for source Pod %s/%s", snapshot.ID, namespace, sourcePod)
+		}
+	}
 	mgr.migCounter++
 	id := fmt.Sprintf("MIG-%04d", mgr.migCounter)
 	mig := &Migration{
@@ -130,6 +147,11 @@ func (mgr *Manager) StartMigrationAsync(sourcePod, namespace, targetNode string)
 func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 	mig.StartTime = time.Now().UTC()
 	startDowntime := time.Time{}
+	if mgr.checkpoint == nil || mgr.transfer == nil || mgr.workloadCtrl == nil {
+		err := fmt.Errorf("migration requires checkpoint, transfer, and workload providers")
+		mgr.rollbackMgr.ExecuteRollback(ctx, mig, StatePreparing, err)
+		return err
+	}
 
 	// -------------------------------------------------------------------------
 	// Step 1 & 2: Validate source Pod and target Node environment
@@ -224,6 +246,17 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 
 	var targetPodName string
 	if mgr.workloadCtrl != nil {
+		targetRef := checkpoint.Target{
+			Namespace: mig.Namespace,
+			PodName:   mig.SourcePod + "-target",
+			NodeName:  mig.TargetNode,
+		}
+		if preflight, ok := mgr.checkpoint.(checkpoint.RestorePreflight); ok {
+			if err := preflight.ValidateRestore(ctx, ckptResult, targetRef); err != nil {
+				mgr.rollbackMgr.ExecuteRollback(ctx, mig, StateRestoring, fmt.Errorf("restore preflight failed: %w", err))
+				return err
+			}
+		}
 		var prepErr error
 		targetPodName, prepErr = mgr.workloadCtrl.PrepareTarget(ctx, mig.Namespace, mig.SourcePod, mig.TargetNode)
 		if prepErr != nil {
@@ -234,11 +267,7 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 		mig.TargetPod = targetPodName
 		mig.mu.Unlock()
 
-		targetRef := checkpoint.Target{
-			Namespace: mig.Namespace,
-			PodName:   targetPodName,
-			NodeName:  mig.TargetNode,
-		}
+		targetRef.PodName = targetPodName
 
 		if resErr := mgr.checkpoint.RestoreCheckpoint(ctx, ckptResult, targetRef); resErr != nil {
 			mgr.rollbackMgr.ExecuteRollback(ctx, mig, StateRestoring, fmt.Errorf("checkpoint restore failed: %w", resErr))
@@ -336,12 +365,11 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 	}
 	mig.mu.Unlock()
 
+	mgr.metrics.IncMigrationSuccess()
+	mgr.metrics.RecordMigrationRun(mig)
 	if err := mig.SetState(StateCompleted, fmt.Sprintf("downtime=%s duration=%s", mig.Downtime, mig.EndTime.Sub(mig.StartTime))); err != nil {
 		return err
 	}
-
-	mgr.metrics.IncMigrationSuccess()
-	mgr.metrics.RecordMigrationRun(mig)
 	return nil
 }
 

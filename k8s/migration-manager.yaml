@@ -16,6 +16,9 @@ spec:
         app: migration-manager
     spec:
       serviceAccountName: migration-manager
+      volumes:
+      - name: tmp
+        emptyDir: {}
       containers:
       - name: manager
         image: kairokube-manager:latest
@@ -25,17 +28,20 @@ spec:
           name: http-api
         env:
         - name: RABBITMQ_URL
-          value: "amqp://guest:guest@rabbitmq:5672/"
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-credentials
+              key: url
         - name: QUEUE_NAME
           value: "microservices-queue"
         - name: MIGRATION_MODE
-          value: "pod"
+          value: "mock"
         - name: MIGRATION_FEASIBILITY_POLICY
           value: "warn"
         - name: CHECKPOINT_PROVIDER
-          value: "kubelet"
+          value: "mock"
         - name: TRANSFER_PROVIDER
-          value: "file"
+          value: "mock"
         - name: MAX_REPLAY_TIME
           value: "5s"
         - name: MIN_CUTOFF_TIME
@@ -50,8 +56,27 @@ spec:
           value: "60s"
         - name: RESTORE_TIMEOUT
           value: "60s"
+        - name: MIGRATION_TIMEOUT
+          value: "5m"
         - name: SERVER_PORT
           value: "8080"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /health
