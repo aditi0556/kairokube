@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,6 +33,24 @@ func TestMessageEncodingDecoding(t *testing.T) {
 	}
 	if decoded.Payload != orig.Payload {
 		t.Errorf("Payload mismatch: %s vs %s", decoded.Payload, orig.Payload)
+	}
+}
+
+func TestMessageSchemaVersionValidation(t *testing.T) {
+	msg := NewMessage(7, "payload")
+	if msg.Version != 1 {
+		t.Fatalf("expected schema version 1, got %d", msg.Version)
+	}
+	encoded, err := msg.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeMessage(encoded)
+	if err != nil || decoded.Version != 1 {
+		t.Fatalf("decode = %#v, %v", decoded, err)
+	}
+	if _, err := DecodeMessage([]byte(`{"version":99,"id":"x"}`)); err == nil || !strings.Contains(err.Error(), "unsupported message schema version") {
+		t.Fatalf("expected unsupported schema version error, got %v", err)
 	}
 }
 

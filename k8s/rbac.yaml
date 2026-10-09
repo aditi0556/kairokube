@@ -5,42 +5,50 @@ metadata:
   namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: migration-manager-role
+  name: migration-manager-pods
+  namespace: default
 rules:
-  # 1. Pod operations: Discover source/target status and stop source pod at cutoff
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["pods/status"]
-    verbs: ["get", "watch"]
-
-  # 2. Node operations: Verify target node readiness and discover node IPs
+    verbs: ["get", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: migration-manager-kubelet-proxy
+rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "watch"]
-
-  # 3. Kubelet FCC operations: Trigger container checkpointing via Kubelet proxy subresource
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["nodes/proxy"]
-    verbs: ["get", "create"]
-
-  # 4. StatefulSet support: Inspect controller ownership if MIGRATION_MODE=statefulset
-  - apiGroups: ["apps"]
-    resources: ["statefulsets"]
-    verbs: ["get", "list", "watch", "patch"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: migration-manager-pods-binding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: migration-manager
+    namespace: default
+roleRef:
+  kind: Role
+  name: migration-manager-pods
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: migration-manager-binding
+  name: migration-manager-kubelet-proxy-binding
 subjects:
   - kind: ServiceAccount
     name: migration-manager
     namespace: default
 roleRef:
   kind: ClusterRole
-  name: migration-manager-role
+  name: migration-manager-kubelet-proxy
   apiGroup: rbac.authorization.k8s.io

@@ -122,6 +122,14 @@ func (m *MockCheckpointProvider) CreateCheckpoint(ctx context.Context, namespace
 
 // RestoreCheckpoint simulates validating and restoring the checkpoint archive.
 func (m *MockCheckpointProvider) RestoreCheckpoint(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
+	return m.ValidateRestore(ctx, checkpoint, target)
+}
+
+// ValidateRestore verifies mock artifact and target metadata without restoring process memory.
+func (m *MockCheckpointProvider) ValidateRestore(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if m.SimulateFailure {
 		return fmt.Errorf("simulated restore failure")
 	}

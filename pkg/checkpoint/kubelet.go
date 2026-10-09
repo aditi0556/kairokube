@@ -2,7 +2,9 @@ package checkpoint
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -179,13 +181,15 @@ func (p *KubeletFCCProvider) CreateCheckpoint(ctx context.Context, namespace, po
 
 	duration := time.Since(start)
 
-	// Inspect size if accessible locally
-	var size int64 = 0
-	if fi, err := os.Stat(checkpointPath); err == nil {
-		size = fi.Size()
-	} else {
-		// Estimated size from checkpoint tar name if on remote node filesystem
-		size = 42 * 1024 * 1024
+	// A path returned by the Kubelet is node-local. Do not invent size/checksum
+	// metadata when this process cannot read the artifact.
+	fi, err := os.Stat(checkpointPath)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint created at node-local path %q but not readable by manager: %w; configure shared artifact access and an explicit transfer implementation", checkpointPath, err)
+	}
+	checksum, err := fileSHA256(checkpointPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to checksum checkpoint artifact %q: %w", checkpointPath, err)
 	}
 
 	return &CheckpointResult{
@@ -194,26 +198,41 @@ func (p *KubeletFCCProvider) CreateCheckpoint(ctx context.Context, namespace, po
 		ContainerName: containerName,
 		NodeName:      nodeName,
 		FilePath:      checkpointPath,
-		SizeBytes:     size,
+		SizeBytes:     fi.Size(),
 		CreatedAt:     time.Now().UTC(),
 		Duration:      duration,
+		Checksum:      checksum,
 	}, nil
 }
 
 // RestoreCheckpoint attempts to restore the container state on the target environment.
 func (p *KubeletFCCProvider) RestoreCheckpoint(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
+	if err := p.ValidateRestore(ctx, checkpoint, target); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateRestore reports that this provider has no runtime-specific restore implementation.
+func (p *KubeletFCCProvider) ValidateRestore(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
+	_ = ctx
 	if checkpoint == nil {
 		return fmt.Errorf("checkpoint result cannot be nil")
 	}
-	// Kubernetes upstream FCC produces a checkpoint archive (.tar) via CRIU.
-	// Restoration requires either:
-	// 1. Invoking CRIU / container runtime restore on the target node.
-	// 2. Deploying a restored pod with checkpoint artifact volume.
-	// This method validates the artifact existence and target specifications.
-	if target.NodeName == "" {
-		return fmt.Errorf("target node name must be specified for restoration")
+	return fmt.Errorf("Kubelet FCC creates checkpoint archives but this provider does not implement CRI/runtime restore; refusing to report restore success for target %s/%s on %s", target.Namespace, target.PodName, target.NodeName)
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
 	}
-	return nil
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Ensure interface compliance

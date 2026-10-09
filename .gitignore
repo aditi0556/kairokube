@@ -28,3 +28,7 @@ go.work.sum
 .gocache/
 *.html
 benchmark_results.*
+/tmp/
+.gomodcache/
+__pycache__/
+*.pyc

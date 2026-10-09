@@ -61,3 +61,11 @@ func TestMockCheckpointFailureSimulation(t *testing.T) {
 		t.Fatal("expected simulated failure, got nil")
 	}
 }
+
+func TestKubeletRestoreFailsWhenRuntimeRestoreIsUnavailable(t *testing.T) {
+	provider := NewKubeletFCCProvider(nil, nil, KubeletFCCConfig{})
+	err := provider.RestoreCheckpoint(context.Background(), &CheckpointResult{FilePath: "checkpoint.tar"}, Target{Namespace: "default", PodName: "target", NodeName: "worker-2"})
+	if err == nil {
+		t.Fatal("expected explicit unsupported restore error")
+	}
+}

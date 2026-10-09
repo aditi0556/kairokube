@@ -45,3 +45,9 @@ type CheckpointProvider interface {
 	// RestoreCheckpoint restores a checkpointed artifact on the target environment.
 	RestoreCheckpoint(ctx context.Context, checkpoint *CheckpointResult, target Target) error
 }
+
+// RestorePreflight lets a provider reject unsupported restore operations before
+// the workload controller starts a target process.
+type RestorePreflight interface {
+	ValidateRestore(ctx context.Context, checkpoint *CheckpointResult, target Target) error
+}

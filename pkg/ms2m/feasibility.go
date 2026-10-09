@@ -2,6 +2,7 @@ package ms2m
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -41,6 +42,13 @@ func EvaluateFeasibility(lambda, mu float64, policy string) FeasibilityResult {
 		ArrivalRate: lambda,
 		TargetRate:  mu,
 		Policy:      pol,
+	}
+	if math.IsNaN(lambda) || math.IsInf(lambda, 0) || math.IsNaN(mu) || math.IsInf(mu, 0) || lambda < 0 {
+		result.Status = StatusInfeasible
+		result.Utilization = 999.0
+		result.Message = "arrival or processing rate is invalid"
+		result.CanProceed = pol == "force"
+		return result
 	}
 
 	if mu <= 0 {

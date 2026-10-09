@@ -29,9 +29,6 @@ func NewRateMonitor(rmqClient *rabbitmq.Client, window time.Duration, defaultMu 
 	if window <= 0 {
 		window = 5 * time.Second
 	}
-	if defaultMu <= 0 {
-		defaultMu = 20.0 // Default 50ms processing delay = 20 msg/s
-	}
 	return &RealTimeRateMonitor{
 		window:     window,
 		rmqClient:  rmqClient,
@@ -87,8 +84,9 @@ func (m *RealTimeRateMonitor) MeasureRates(ctx context.Context, queueName string
 	lambda = float64(totalArrivals) / windowSec
 	mu = float64(totalProcessed) / windowSec
 
-	// If no processing events occurred in the window, use baseline target processing rate
-	if mu <= 0.001 {
+	// A configured baseline is only meaningful when the caller explicitly supplies
+	// one (for example, a labeled simulation). Never invent a processing rate.
+	if mu <= 0.001 && m.defaultMu > 0 {
 		mu = m.defaultMu
 	}
 
