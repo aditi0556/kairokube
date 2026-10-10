@@ -60,6 +60,8 @@ spec:
           value: "5m"
         - name: SERVER_PORT
           value: "8080"
+        - name: CONSUMER_STATUS_URL
+          value: "http://consumer:8081/state"
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true

@@ -34,7 +34,7 @@ Get-Content .env | Where-Object { $_ -and $_ -notmatch '^\s*#' } | ForEach-Objec
 }
 ```
 
-The file selects the explicit mock workflow and uses the local RabbitMQ credentials shown below. Change the values in `.env` if your broker uses different credentials or ports.
+The file selects the explicit mock workflow and uses the local RabbitMQ credentials shown below. Change the values in `.env` if your broker uses different credentials or ports. The manager also consumes migration control requests from `MIGRATION_REQUEST_QUEUE`; normal application messages remain on `QUEUE_NAME`.
 
 ## Run locally (mock demonstration)
 
@@ -209,3 +209,19 @@ The manager manifest selects mock mode explicitly. To inspect it, use `kubectl g
 ## Real checkpointing limitations
 
 `MIGRATION_MODE=pod` with `CHECKPOINT_PROVIDER=kubelet` requires a configured Kubernetes client, appropriate API/Kubelet authorization, compatible CRI checkpoint support, and access to the node-local checkpoint archive. The project cannot currently restore the archive into a target runtime or safely hand off controller-owned workloads/PVCs. Do not point this mode at workloads expecting an end-to-end migration.
+
+## Producer-to-manager migration trigger
+
+Application messages use `QUEUE_NAME` (default `microservices-queue`). Migration commands use a separate durable queue named by `MIGRATION_REQUEST_QUEUE` (default `migration-requests`). The manager consumes that control queue and starts the same workflow as `POST /migrations`.
+
+To publish one migration request automatically after the producer sends a chosen number of application messages, set these variables before starting the producer:
+
+```powershell
+$env:MIGRATION_TRIGGER_AFTER_MESSAGES = "20"
+$env:MIGRATION_SOURCE_POD = "consumer-0"
+$env:MIGRATION_NAMESPACE = "default"
+$env:MIGRATION_TARGET_NODE = "worker-2"
+go run ./cmd/producer
+```
+
+The producer publishes the request only after the application message at the configured sequence has been published. The manager validates the request, ignores duplicate request IDs, acknowledges accepted requests, and rejects malformed or conflicting requests.

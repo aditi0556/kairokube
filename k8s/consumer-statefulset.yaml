@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer
+spec:
+  clusterIP: None
+  selector:
+    app: consumer
+  ports:
+  - name: status
+    port: 8081
+    targetPort: 8081
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -17,6 +30,9 @@ spec:
       - name: consumer
         image: kairokube-consumer:latest
         imagePullPolicy: Never
+        ports:
+        - name: status
+          containerPort: 8081
         env:
         - name: RABBITMQ_URL
           valueFrom:

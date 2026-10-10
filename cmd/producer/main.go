@@ -21,6 +21,11 @@ func main() {
 	queueName := getEnv("QUEUE_NAME", "microservices-queue")
 	rateMsgPerSec := getFloatEnv("PUBLISH_RATE_MSG_PER_SEC", 1.0)
 	maxMessages := getIntEnv("MAX_MESSAGES", 0)
+	migrationAfter := getIntEnv("MIGRATION_TRIGGER_AFTER_MESSAGES", 0)
+	migrationQueue := getEnv("MIGRATION_REQUEST_QUEUE", "migration-requests")
+	migrationSource := os.Getenv("MIGRATION_SOURCE_POD")
+	migrationNamespace := getEnv("MIGRATION_NAMESPACE", "default")
+	migrationTarget := os.Getenv("MIGRATION_TARGET_NODE")
 	payload := os.Getenv("MESSAGE_PAYLOAD")
 	payloadFile := os.Getenv("MESSAGE_FILE")
 	var payloads []string
@@ -68,6 +73,19 @@ func main() {
 				log.Printf("Failed to publish message sequence %d (id=%s): %v", sequence, msg.ID, err)
 			} else if sequence%20 == 0 || rateMsgPerSec <= 2.0 {
 				log.Printf("Published message id=%s seq=%d timestamp=%s", msg.ID, msg.Sequence, msg.Timestamp.Format(time.RFC3339))
+			}
+			if migrationAfter > 0 && sequence == int64(migrationAfter) {
+				if migrationSource == "" || migrationTarget == "" {
+					log.Printf("Migration trigger configured but MIGRATION_SOURCE_POD or MIGRATION_TARGET_NODE is empty")
+				} else {
+					req := rabbitmq.NewMigrationRequest(migrationSource, migrationNamespace, migrationTarget)
+					body, _ := req.Encode()
+					if err := client.Publish(migrationQueue, string(body)); err != nil {
+						log.Printf("Failed to publish migration request: %v", err)
+					} else {
+						log.Printf("Published migration request id=%s to %s", req.ID, migrationQueue)
+					}
+				}
 			}
 			if maxMessages > 0 && sequence >= int64(maxMessages) {
 				log.Printf("Reached maximum message count (%d). Producer exiting.", maxMessages)

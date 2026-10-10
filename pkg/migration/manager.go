@@ -18,18 +18,20 @@ import (
 
 // Manager coordinates the end-to-end MS2M stateful microservice migration lifecycle.
 type Manager struct {
-	cfg          *config.Config
-	k8sClient    *k8s.Client
-	rmqClient    *rabbitmq.Client
-	checkpoint   checkpoint.CheckpointProvider
-	transfer     transfer.TransferProvider
-	workloadCtrl WorkloadController
-	rateMonitor  *RealTimeRateMonitor
-	rollbackMgr  *RollbackManager
-	metrics      *MetricsCollector
-	migrations   map[string]*Migration
-	mu           sync.RWMutex
-	migCounter   int64
+	cfg             *config.Config
+	k8sClient       *k8s.Client
+	rmqClient       *rabbitmq.Client
+	checkpoint      checkpoint.CheckpointProvider
+	transfer        transfer.TransferProvider
+	workloadCtrl    WorkloadController
+	rateMonitor     *RealTimeRateMonitor
+	rollbackMgr     *RollbackManager
+	metrics         *MetricsCollector
+	migrations      map[string]*Migration
+	mu              sync.RWMutex
+	migCounter      int64
+	requestMu       sync.Mutex
+	handledRequests map[string]struct{}
 }
 
 // NewManager constructs a fully configured Migration Manager.
@@ -48,33 +50,74 @@ func NewManager(
 	if metrics == nil {
 		metrics = NewMetricsCollector()
 	}
-<<<<<<< HEAD
 	defaultMu := 0.0
 	if cfg.MigrationMode != "pod" && os.Getenv("CONSUMER_STATUS_URL") == "" {
 		defaultMu = 20.0 // explicit test-only mock capacity
-=======
-	// The mock workflow's documented 20 msg/s capacity is a simulation baseline.
-	// Real/pod mode has no fallback; until observations exist, mu remains zero.
-	defaultMu := 0.0
-	if cfg.MigrationMode == "mock" {
-		defaultMu = 20
->>>>>>> 7c54a60f3599d85ad3625f5e47308905ef936326
 	}
 	rm := NewRateMonitor(rmqClient, cfg.MetricsWindow, defaultMu)
 	rb := NewRollbackManager(wc, metrics)
 
 	return &Manager{
-		cfg:          cfg,
-		k8sClient:    k8sClient,
-		rmqClient:    rmqClient,
-		checkpoint:   cp,
-		transfer:     tp,
-		workloadCtrl: wc,
-		rateMonitor:  rm,
-		rollbackMgr:  rb,
-		metrics:      metrics,
-		migrations:   make(map[string]*Migration),
+		cfg:             cfg,
+		k8sClient:       k8sClient,
+		rmqClient:       rmqClient,
+		checkpoint:      cp,
+		transfer:        tp,
+		workloadCtrl:    wc,
+		rateMonitor:     rm,
+		rollbackMgr:     rb,
+		metrics:         metrics,
+		migrations:      make(map[string]*Migration),
+		handledRequests: make(map[string]struct{}),
 	}
+}
+
+// StartMigrationRequestConsumer consumes control-plane migration requests from RabbitMQ.
+func (mgr *Manager) StartMigrationRequestConsumer(ctx context.Context, queueName string) error {
+	if mgr.rmqClient == nil {
+		return fmt.Errorf("RabbitMQ client is not initialized")
+	}
+	deliveries, err := mgr.rmqClient.Consume(queueName)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case delivery, ok := <-deliveries:
+				if !ok {
+					return
+				}
+				req, decodeErr := rabbitmq.DecodeMigrationRequest(delivery.Body)
+				if decodeErr != nil {
+					log.Printf("Rejecting migration request: %v", decodeErr)
+					_ = delivery.Nack(false, false)
+					continue
+				}
+				mgr.requestMu.Lock()
+				_, duplicate := mgr.handledRequests[req.ID]
+				if !duplicate {
+					mgr.handledRequests[req.ID] = struct{}{}
+				}
+				mgr.requestMu.Unlock()
+				if duplicate {
+					log.Printf("Ignoring duplicate migration request %s", req.ID)
+					_ = delivery.Ack(false)
+					continue
+				}
+				if _, startErr := mgr.StartMigrationAsync(req.SourcePod, req.Namespace, req.TargetNode); startErr != nil {
+					log.Printf("Migration request %s rejected: %v", req.ID, startErr)
+					_ = delivery.Nack(false, false)
+					continue
+				}
+				log.Printf("Started migration for request %s: %s/%s -> %s", req.ID, req.Namespace, req.SourcePod, req.TargetNode)
+				_ = delivery.Ack(false)
+			}
+		}
+	}()
+	return nil
 }
 
 // CreateMigration creates a new migration tracking record in IDLE state and

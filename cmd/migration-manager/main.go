@@ -96,6 +96,11 @@ func main() {
 
 	metrics := migration.NewMetricsCollector()
 	mgr := migration.NewManager(cfg, k8sClient, rmqClient, cp, tp, wc, metrics)
+	requestCtx, requestCancel := context.WithCancel(context.Background())
+	defer requestCancel()
+	if err := mgr.StartMigrationRequestConsumer(requestCtx, getEnv("MIGRATION_REQUEST_QUEUE", "migration-requests")); err != nil {
+		log.Fatalf("Failed to start migration request consumer: %v", err)
+	}
 
 	// CLI Mode execution if source and target are provided
 	if *sourcePodFlag != "" && *targetNodeFlag != "" {
@@ -140,4 +145,11 @@ func main() {
 		_ = server.Stop(ctx)
 		log.Println("Migration Manager server stopped cleanly.")
 	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
