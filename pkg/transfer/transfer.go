@@ -67,9 +67,33 @@ func (p *FileTransferProvider) Transfer(ctx context.Context, sourcePath, targetN
 	if destDir == "" {
 		destDir = p.DefaultDestDir
 	}
-	_ = os.MkdirAll(destDir, 0755)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return &TransferResult{
+			SourcePath: sourcePath,
+			TargetNode: targetNode,
+			StartTime:  startTime,
+			EndTime:    time.Now(),
+			Success:    false,
+			Error:      fmt.Sprintf("failed to create destination directory: %v", err),
+		}, fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
+	}
 
 	destPath := filepath.Join(destDir, filepath.Base(sourcePath))
+
+	// Refuse to transfer an artifact onto itself: os.Create would truncate the
+	// source before it is read, destroying the checkpoint.
+	if destInfo, statErr := os.Stat(destPath); statErr == nil && os.SameFile(srcInfo, destInfo) {
+		return &TransferResult{
+				SourcePath:      sourcePath,
+				DestinationPath: destPath,
+				TargetNode:      targetNode,
+				StartTime:       startTime,
+				EndTime:         time.Now(),
+				Success:         false,
+				Error:           "destination is the same file as source",
+			},
+			fmt.Errorf("destination %s is the same file as source; refusing to overwrite the checkpoint", destPath)
+	}
 
 	srcFile, err := os.Open(sourcePath)
 	if err != nil {

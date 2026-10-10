@@ -2,9 +2,9 @@ package migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -51,7 +51,7 @@ func NewManager(
 		metrics = NewMetricsCollector()
 	}
 	defaultMu := 0.0
-	if cfg.MigrationMode != "pod" && os.Getenv("CONSUMER_STATUS_URL") == "" {
+	if cfg.MigrationMode != "pod" {
 		defaultMu = 20.0 // explicit test-only mock capacity
 	}
 	rm := NewRateMonitor(rmqClient, cfg.MetricsWindow, defaultMu)
@@ -120,17 +120,23 @@ func (mgr *Manager) StartMigrationRequestConsumer(ctx context.Context, queueName
 	return nil
 }
 
+// ErrInvalidMigrationRequest is returned when a migration request is malformed.
+var ErrInvalidMigrationRequest = errors.New("invalid migration request")
+
+// ErrMigrationConflict is returned when the source Pod already has an active migration.
+var ErrMigrationConflict = errors.New("migration conflict")
+
 // CreateMigration creates a new migration tracking record in IDLE state and
 // rejects a second active migration for the same namespace and source Pod.
 func (mgr *Manager) CreateMigration(sourcePod, namespace, targetNode string) (*Migration, error) {
 	if sourcePod == "" {
-		return nil, fmt.Errorf("source_pod cannot be empty")
+		return nil, fmt.Errorf("%w: source_pod cannot be empty", ErrInvalidMigrationRequest)
 	}
 	if namespace == "" {
 		namespace = "default"
 	}
 	if targetNode == "" {
-		return nil, fmt.Errorf("target_node cannot be empty")
+		return nil, fmt.Errorf("%w: target_node cannot be empty", ErrInvalidMigrationRequest)
 	}
 
 	mgr.mu.Lock()
@@ -139,7 +145,7 @@ func (mgr *Manager) CreateMigration(sourcePod, namespace, targetNode string) (*M
 		if snapshot.Namespace == namespace && snapshot.SourcePod == sourcePod &&
 			snapshot.State != StateCompleted && snapshot.State != StateFailed {
 			mgr.mu.Unlock()
-			return nil, fmt.Errorf("migration %s is already active for source Pod %s/%s", snapshot.ID, namespace, sourcePod)
+			return nil, fmt.Errorf("%w: migration %s is already active for source Pod %s/%s", ErrMigrationConflict, snapshot.ID, namespace, sourcePod)
 		}
 	}
 	mgr.migCounter++

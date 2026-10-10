@@ -22,3 +22,9 @@ spec:
             secretKeyRef:
               name: rabbitmq-credentials
               key: url
+        - name: MESSAGE_PAYLOAD
+          value: '{"event":"order.updated","order_id":"k8s-demo","status":"ready"}'
+        - name: PUBLISH_RATE_MSG_PER_SEC
+          value: "2"
+        - name: MAX_MESSAGES
+          value: "0"

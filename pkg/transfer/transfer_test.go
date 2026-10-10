@@ -71,3 +71,38 @@ func TestFileTransferChecksumMismatch(t *testing.T) {
 		t.Fatal("expected checksum mismatch error, got nil")
 	}
 }
+
+// TestFileTransferSameDirectoryDoesNotTruncateSource guards against a data-loss
+// bug where the destination path equals the source path and os.Create
+// truncated the checkpoint before it could be read.
+func TestFileTransferSameDirectoryDoesNotTruncateSource(t *testing.T) {
+	dir := filepath.Join(os.TempDir(), "kairokube-same-dir")
+	_ = os.MkdirAll(dir, 0755)
+	defer os.RemoveAll(dir)
+
+	srcFile := filepath.Join(dir, "artifact.tar")
+	content := []byte("MS2M checkpoint same-directory payload")
+	if err := os.WriteFile(srcFile, content, 0644); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+	sum := sha256.Sum256(content)
+	checksum := hex.EncodeToString(sum[:])
+
+	provider := NewFileTransferProvider(dir)
+	res, err := provider.Transfer(context.Background(), srcFile, "worker-2", dir, checksum)
+	if err == nil {
+		t.Fatal("expected same-file transfer to be refused")
+	}
+	if res == nil || res.Success {
+		t.Fatalf("expected unsuccessful result for same-file transfer, got %+v", res)
+	}
+
+	data, err := os.ReadFile(srcFile)
+	if err != nil {
+		t.Fatalf("failed to read artifact after transfer: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Fatalf("artifact was modified by same-directory transfer: got %d bytes, want %d", len(data), len(content))
+	}
+}
+

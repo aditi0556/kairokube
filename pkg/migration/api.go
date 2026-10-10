@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,6 +35,8 @@ func NewServer(mgr *Manager, addr string) *Server {
 	return s
 }
 
+// registerRoutes binds every HTTP path served by the manager to its handler.
+// Paths are registered once in NewServer; the mux is not modified afterwards.
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/migrations", s.handleMigrations)
 	s.mux.HandleFunc("/migrations/", s.handleMigrationByID)
@@ -52,17 +55,24 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
+// createMigrationRequest is the JSON body accepted by POST /migrations.
+// SourcePod and TargetNode are required; Namespace defaults to "default".
 type createMigrationRequest struct {
 	SourcePod  string `json:"source_pod"`
 	Namespace  string `json:"namespace"`
 	TargetNode string `json:"target_node"`
 }
 
+// createMigrationResponse is returned with HTTP 202 when a migration is accepted.
+// MigrationID identifies the record for later GET /migrations/{id} calls.
 type createMigrationResponse struct {
 	MigrationID string `json:"migration_id"`
 	Status      string `json:"status"`
 }
 
+// handleMigrations serves /migrations. POST validates the request and starts a
+// migration asynchronously (202, or 400/409 on bad input or conflict); GET lists
+// every known migration snapshot. Other methods receive 405.
 func (s *Server) handleMigrations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -81,7 +91,14 @@ func (s *Server) handleMigrations(w http.ResponseWriter, r *http.Request) {
 
 		mig, err := s.manager.StartMigrationAsync(req.SourcePod, req.Namespace, req.TargetNode)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to initiate migration: %v", err), http.StatusInternalServerError)
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, ErrInvalidMigrationRequest):
+				status = http.StatusBadRequest
+			case errors.Is(err, ErrMigrationConflict):
+				status = http.StatusConflict
+			}
+			http.Error(w, fmt.Sprintf("failed to initiate migration: %v", err), status)
 			return
 		}
 
@@ -106,6 +123,8 @@ func (s *Server) handleMigrations(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleMigrationByID serves GET /migrations/{id}. It returns the migration
+// snapshot as JSON, 404 if the ID is unknown, and 400 if the ID is empty.
 func (s *Server) handleMigrationByID(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -128,12 +147,16 @@ func (s *Server) handleMigrationByID(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(mig.Snapshot())
 }
 
+// handleHealth serves GET /health with a static healthy status. It reports that
+// the HTTP process is up; it does not check Kubernetes or RabbitMQ connectivity.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"healthy","service":"migration-manager"}`))
 }
 
+// handleMetrics serves GET /metrics in Prometheus text exposition format, built
+// from the manager's MetricsCollector.
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

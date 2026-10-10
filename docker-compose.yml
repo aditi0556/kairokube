@@ -1,0 +1,77 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: kairokube
+      RABBITMQ_DEFAULT_PASS: kairokube-dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  game2048:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.game2048
+    environment:
+      RABBITMQ_URL: amqp://kairokube:kairokube-dev@rabbitmq:5672/
+      QUEUE_NAME: microservices-queue
+      STATUS_PORT: "8081"
+      PROCESSING_DELAY_MS: "0"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+
+  migration-manager:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.manager
+    environment:
+      RABBITMQ_URL: amqp://kairokube:kairokube-dev@rabbitmq:5672/
+      QUEUE_NAME: microservices-queue
+      MIGRATION_REQUEST_QUEUE: migration-requests
+      CONSUMER_STATUS_URL: http://game2048:8081/state
+      MIGRATION_MODE: mock
+      CHECKPOINT_PROVIDER: mock
+      TRANSFER_PROVIDER: mock
+      SERVER_PORT: "8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      game2048:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  producer:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.producer
+    environment:
+      RABBITMQ_URL: amqp://kairokube:kairokube-dev@rabbitmq:5672/
+      QUEUE_NAME: microservices-queue
+      PUBLISH_RATE_MSG_PER_SEC: "2"
+      MAX_MESSAGES: "0"
+      MESSAGE_FILE: /app/game/moves.jsonl
+    volumes:
+      - ./game/moves.jsonl:/app/game/moves.jsonl:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq-data:
