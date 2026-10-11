@@ -164,7 +164,7 @@ Settings come from environment variables and are validated at startup. Defaults 
 |---|---|---|
 | `RABBITMQ_URL`, `QUEUE_NAME` | as above | Broker and queue. |
 | `STATUS_PORT` | `8081` | Port for `/health` and `/state`. |
-| `PROCESSING_DELAY_MS` | `0` | Simulated per-message processing delay. |
+| `PROCESSING_DELAY_MS` | consumer: `50`; game2048: `0` | Simulated per-message processing delay. The two services use different defaults. |
 
 ## HTTP API (migration manager)
 

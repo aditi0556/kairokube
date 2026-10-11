@@ -11,6 +11,8 @@ import (
 	"github.com/aditi0556/kairokube/pkg/rabbitmq"
 )
 
+// rateSample is one timestamped count of arrivals or processed messages, kept in a
+// sliding window to compute rates.
 type rateSample struct {
 	timestamp time.Time
 	count     int64
@@ -135,6 +137,8 @@ func (m *RealTimeRateMonitor) MeasureRates(ctx context.Context, queueName string
 	return lambda, mu, queueDepth, nil
 }
 
+// prune drops samples older than twice the measurement window. The caller must
+// hold m.mu.
 func (m *RealTimeRateMonitor) prune() {
 	cutoff := time.Now().Add(-2 * m.window)
 

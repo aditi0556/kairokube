@@ -115,6 +115,7 @@ func Load() *Config {
 	}
 }
 
+// getEnv returns the environment variable key, or defaultVal when it is unset or empty.
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
@@ -122,6 +123,8 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
+// getDurationEnv parses key with time.ParseDuration (for example "5s" or "2m"),
+// returning defaultVal when it is unset or unparsable.
 func getDurationEnv(key string, defaultVal time.Duration) time.Duration {
 	val := os.Getenv(key)
 	if val == "" {
@@ -134,6 +137,7 @@ func getDurationEnv(key string, defaultVal time.Duration) time.Duration {
 	return d
 }
 
+// getIntEnv parses key as an integer, returning defaultVal when it is unset or unparsable.
 func getIntEnv(key string, defaultVal int) int {
 	val := os.Getenv(key)
 	if val == "" {
@@ -146,6 +150,7 @@ func getIntEnv(key string, defaultVal int) int {
 	return n
 }
 
+// getBoolEnv parses key with strconv.ParseBool, returning defaultVal when it is unset or unparsable.
 func getBoolEnv(key string, defaultVal bool) bool {
 	val := os.Getenv(key)
 	if val == "" {

@@ -47,6 +47,10 @@ func NewPodWorkloadController(cs kubernetes.Interface) *PodWorkloadController {
 	return &PodWorkloadController{clientset: cs}
 }
 
+// ValidateSource checks that the source Pod is safe to migrate: it must exist,
+// be Running and Ready, not be owned by a controller (controller-owned Pods are
+// never deleted by this mode), and not use PVC or hostPath volumes that this
+// workflow cannot hand off.
 func (c *PodWorkloadController) ValidateSource(ctx context.Context, namespace, podName string) error {
 	if c.clientset == nil {
 		return fmt.Errorf("kubernetes clientset is nil")
@@ -79,6 +83,8 @@ func (c *PodWorkloadController) ValidateSource(ctx context.Context, namespace, p
 	return nil
 }
 
+// ValidateTargetNode checks that the target node exists, is not cordoned, and
+// reports the Ready condition as True.
 func (c *PodWorkloadController) ValidateTargetNode(ctx context.Context, targetNode string) error {
 	if c.clientset == nil {
 		return fmt.Errorf("kubernetes clientset is nil")
@@ -103,6 +109,10 @@ func (c *PodWorkloadController) ValidateTargetNode(ctx context.Context, targetNo
 	return nil
 }
 
+// PrepareTarget creates a copy of the source Pod named "<source>-target", pinned
+// to targetNode and reusing the source containers and volumes. It refuses to run
+// if a Pod with that name already exists, so it never overwrites a live workload.
+// It returns the name of the created Pod.
 func (c *PodWorkloadController) PrepareTarget(ctx context.Context, namespace, sourcePod, targetNode string) (string, error) {
 	if c.clientset == nil {
 		return "", fmt.Errorf("kubernetes clientset is nil")
@@ -148,6 +158,8 @@ func (c *PodWorkloadController) PrepareTarget(ctx context.Context, namespace, so
 	return created.Name, nil
 }
 
+// StopSource deletes the source Pod. The caller must only call it after the
+// cutoff point, because deletion ends the source's processing.
 func (c *PodWorkloadController) StopSource(ctx context.Context, namespace, podName string) error {
 	if c.clientset == nil {
 		return fmt.Errorf("kubernetes clientset is nil")
@@ -159,6 +171,8 @@ func (c *PodWorkloadController) StopSource(ctx context.Context, namespace, podNa
 	return nil
 }
 
+// VerifyTarget polls the target Pod once per second until its Ready condition is
+// True, returning an error after timeout or when ctx is cancelled.
 func (c *PodWorkloadController) VerifyTarget(ctx context.Context, namespace, targetPod string, timeout time.Duration) error {
 	if c.clientset == nil {
 		return fmt.Errorf("kubernetes clientset is nil")
@@ -188,6 +202,9 @@ func (c *PodWorkloadController) VerifyTarget(ctx context.Context, namespace, tar
 	}
 }
 
+// RestoreSource reports success only if the source Pod still exists. This
+// controller keeps no recreation template, so an absent source is an error:
+// the source cannot be recovered automatically.
 func (c *PodWorkloadController) RestoreSource(ctx context.Context, namespace, podName string) error {
 	if c.clientset == nil {
 		return fmt.Errorf("kubernetes clientset is nil")
@@ -199,6 +216,8 @@ func (c *PodWorkloadController) RestoreSource(ctx context.Context, namespace, po
 	}
 }
 
+// CleanupTarget deletes the target Pod during rollback. It is a no-op when no
+// target name is given, so repeated rollback calls are safe.
 func (c *PodWorkloadController) CleanupTarget(ctx context.Context, namespace, targetPod string) error {
 	if c.clientset == nil || targetPod == "" {
 		return nil

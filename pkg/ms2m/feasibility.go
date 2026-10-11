@@ -9,6 +9,7 @@ import (
 // FeasibilityStatus classifies the risk level of starting a migration.
 type FeasibilityStatus string
 
+// Feasibility classifications for a migration, derived from utilization rho = lambda/mu.
 const (
 	StatusFeasible   FeasibilityStatus = "FEASIBLE"
 	StatusHighRisk   FeasibilityStatus = "HIGH_RISK"

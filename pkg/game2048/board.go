@@ -149,6 +149,9 @@ func (b *Board) Apply(d Direction, rng *rand.Rand) (bool, error) {
 	return true, nil
 }
 
+// spawn places one new tile in a uniformly chosen empty cell: a 2 with probability
+// 0.9 and a 4 otherwise. It does nothing when the board is full. All randomness
+// comes from rng, which keeps replays deterministic.
 func (b *Board) spawn(rng *rand.Rand) {
 	type cell struct{ r, c int }
 	var empty []cell

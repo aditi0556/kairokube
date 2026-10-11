@@ -26,6 +26,9 @@ type State struct {
 	DuplicatesDetected int64 `json:"duplicates_detected"`
 }
 
+// main consumes application messages with manual acknowledgement. Duplicates are
+// acknowledged without being counted again, invalid envelopes are rejected, and
+// the state is served on /state and /health. It shuts down on SIGINT/SIGTERM.
 func main() {
 	log.Println("Starting MS2M Consumer Microservice...")
 
@@ -128,6 +131,8 @@ func main() {
 	}
 }
 
+// startStatusServer serves /health and /state on port. It runs until the HTTP
+// server fails; the error is discarded because the process keeps consuming.
 func startStatusServer(port string, state *State) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +153,7 @@ func startStatusServer(port string, state *State) {
 	_ = server.ListenAndServe()
 }
 
+// getEnv returns the environment variable name, or defaultValue when it is unset or empty.
 func getEnv(name, defaultValue string) string {
 	if val := os.Getenv(name); val != "" {
 		return val
@@ -155,6 +161,8 @@ func getEnv(name, defaultValue string) string {
 	return defaultValue
 }
 
+// getProcessingDelay reads PROCESSING_DELAY_MS, defaulting to 50 ms when it is
+// unset or invalid. A value of zero disables the delay.
 func getProcessingDelay() time.Duration {
 	value := os.Getenv("PROCESSING_DELAY_MS")
 	if value == "" {

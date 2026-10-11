@@ -15,6 +15,10 @@ import (
 	"github.com/aditi0556/kairokube/pkg/rabbitmq"
 )
 
+// main publishes application messages to RabbitMQ at PUBLISH_RATE_MSG_PER_SEC.
+// It sends the configured payloads, optionally publishes one migration request
+// after MIGRATION_TRIGGER_AFTER_MESSAGES messages, and stops on SIGINT/SIGTERM
+// or after MAX_MESSAGES.
 func main() {
 	log.Println("Starting MS2M Producer Microservice...")
 	rabbitURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
@@ -95,6 +99,9 @@ func main() {
 	}
 }
 
+// readPayloadFile loads one payload per non-empty line from a JSONL-style file.
+// A line that is valid JSON is sent as-is; any other line is JSON-encoded as a
+// string so every payload is valid JSON. It fails when the file has no lines.
 func readPayloadFile(name string) ([]string, error) {
 	path, err := filepath.Abs(name)
 	if err != nil {
@@ -128,12 +135,15 @@ func readPayloadFile(name string) ([]string, error) {
 	return payloads, nil
 }
 
+// getEnv returns the environment variable key, or defaultVal when it is unset or empty.
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
 	}
 	return defaultVal
 }
+// getFloatEnv parses key as a positive float, returning defaultVal when it is
+// unset, unparsable, or not greater than zero.
 func getFloatEnv(key string, defaultVal float64) float64 {
 	val := os.Getenv(key)
 	if val == "" {
@@ -145,6 +155,7 @@ func getFloatEnv(key string, defaultVal float64) float64 {
 	}
 	return f
 }
+// getIntEnv parses key as an integer, returning defaultVal when it is unset or unparsable.
 func getIntEnv(key string, defaultVal int) int {
 	val := os.Getenv(key)
 	if val == "" {

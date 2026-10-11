@@ -145,4 +145,5 @@ func (m *MockCheckpointProvider) ValidateRestore(ctx context.Context, checkpoint
 	return nil
 }
 
+// Compile-time check that MockCheckpointProvider implements CheckpointProvider.
 var _ CheckpointProvider = (*MockCheckpointProvider)(nil)

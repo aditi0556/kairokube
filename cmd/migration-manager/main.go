@@ -18,6 +18,10 @@ import (
 	"github.com/aditi0556/kairokube/pkg/transfer"
 )
 
+// main starts the Migration Manager. It loads and validates configuration, selects
+// the checkpoint, transfer, and workload providers, connects to RabbitMQ, and then
+// either runs one migration from the -source/-target flags or serves the HTTP API
+// until SIGINT/SIGTERM. Startup fails fast on any invalid combination.
 func main() {
 	log.Println("Initializing MS2M Migration Manager...")
 
@@ -147,6 +151,7 @@ func main() {
 	}
 }
 
+// getEnv returns the environment variable key, or defaultValue when it is unset or empty.
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

@@ -31,6 +31,10 @@ type gameState struct {
 	GameOver           bool            `json:"game_over"`
 }
 
+// main runs the 2048 workload. It consumes move commands from RabbitMQ, rejects
+// duplicate messages without applying them, applies each move with a tile-spawn
+// RNG seeded by the message sequence (so a replay reproduces the same board), and
+// acknowledges a message only after it has been applied.
 func main() {
 	log.Println("Starting 2048 stateful game workload...")
 
@@ -133,6 +137,8 @@ func main() {
 	}
 }
 
+// startStatusServer serves /health and /state on port. The state endpoint returns the
+// board, counters, and game-over flag as JSON. It runs until the HTTP server fails.
 func startStatusServer(port string, state *gameState) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +155,7 @@ func startStatusServer(port string, state *gameState) {
 	_ = server.ListenAndServe()
 }
 
+// getEnv returns the environment variable name, or defaultValue when it is unset or empty.
 func getEnv(name, defaultValue string) string {
 	if val := os.Getenv(name); val != "" {
 		return val
@@ -156,6 +163,8 @@ func getEnv(name, defaultValue string) string {
 	return defaultValue
 }
 
+// getProcessingDelay reads PROCESSING_DELAY_MS, defaulting to zero (no delay) when it
+// is unset or invalid. Unlike the consumer service, the game does not add a default delay.
 func getProcessingDelay() time.Duration {
 	value := os.Getenv("PROCESSING_DELAY_MS")
 	if value == "" {

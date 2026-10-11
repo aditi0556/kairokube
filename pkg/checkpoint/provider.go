@@ -10,6 +10,7 @@ import (
 // CheckpointStatus represents the state of a checkpoint operation.
 type CheckpointStatus string
 
+// Checkpoint lifecycle states reported in migration records.
 const (
 	CheckpointRequested CheckpointStatus = "CHECKPOINT_REQUESTED"
 	CheckpointCreated   CheckpointStatus = "CHECKPOINT_CREATED"

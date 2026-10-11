@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-// MigrationState represents the lifecycle state in the MS2M state machine.
+// MigrationState is one state in the MS2M migration state machine. The valid
+// transitions are enforced by isValidTransition.
 type MigrationState string
 
 const (

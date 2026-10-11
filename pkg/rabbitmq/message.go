@@ -123,6 +123,8 @@ func (d *DuplicateDetector) Size() int {
 	return len(d.seenIDs)
 }
 
+// evictStale removes entries older than the retention window. It is called by
+// CheckAndRecord when the cache reaches capacity; the caller must hold d.mu.
 func (d *DuplicateDetector) evictStale() {
 	cutoff := time.Now().Add(-d.retention)
 	for id, t := range d.seenIDs {

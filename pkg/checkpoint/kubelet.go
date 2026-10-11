@@ -222,6 +222,8 @@ func (p *KubeletFCCProvider) ValidateRestore(ctx context.Context, checkpoint *Ch
 	return fmt.Errorf("Kubelet FCC creates checkpoint archives but this provider does not implement CRI/runtime restore; refusing to report restore success for target %s/%s on %s", target.Namespace, target.PodName, target.NodeName)
 }
 
+// fileSHA256 streams the file at path through SHA-256 and returns the hex digest.
+// It is used to checksum checkpoint archives read from the node.
 func fileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
