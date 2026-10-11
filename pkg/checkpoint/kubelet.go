@@ -46,6 +46,18 @@ type KubeletFCCProvider struct {
 	restConfig *rest.Config
 	config     KubeletFCCConfig
 	httpClient *http.Client
+	// restorer performs the node-side restore. Nil means restore is unavailable.
+	restorer NodeRestorer
+	// criuPath is checked by preflight before any restore is attempted.
+	criuPath string
+}
+
+// WithRestorer returns the provider configured to restore through r, with criuPath
+// verified by preflight before each restore. It returns the same provider for chaining.
+func (p *KubeletFCCProvider) WithRestorer(r NodeRestorer, criuPath string) *KubeletFCCProvider {
+	p.restorer = r
+	p.criuPath = criuPath
+	return p
 }
 
 // NewKubeletFCCProvider creates a new KubeletFCCProvider with the given Kubernetes client and config.
@@ -205,21 +217,39 @@ func (p *KubeletFCCProvider) CreateCheckpoint(ctx context.Context, namespace, po
 	}, nil
 }
 
-// RestoreCheckpoint attempts to restore the container state on the target environment.
+// RestoreCheckpoint restores the archive on the target node. It runs ValidateRestore
+// first, then preflight (archive present, CRIU present), then the node restorer. It
+// reports success only when the restorer returns a container ID.
+//
+// Without a configured restorer it fails with ErrNodeRestoreUnavailable, so a
+// migration can never report a restored target that was not restored.
 func (p *KubeletFCCProvider) RestoreCheckpoint(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
 	if err := p.ValidateRestore(ctx, checkpoint, target); err != nil {
 		return err
 	}
+	if err := CheckPreflight(Preflight{ArchivePath: checkpoint.FilePath, CRIUPath: p.criuPath}); err != nil {
+		return err
+	}
+	if _, err := p.restorer.RestoreArchive(ctx, checkpoint.FilePath, target.PodName); err != nil {
+		return fmt.Errorf("restore of %s on %s failed: %w", checkpoint.FilePath, target.NodeName, err)
+	}
 	return nil
 }
 
-// ValidateRestore reports that this provider has no runtime-specific restore implementation.
+// ValidateRestore checks the inputs and the configured restorer. It does not touch
+// the archive or the node; those checks belong to CheckPreflight.
 func (p *KubeletFCCProvider) ValidateRestore(ctx context.Context, checkpoint *CheckpointResult, target Target) error {
 	_ = ctx
 	if checkpoint == nil {
 		return fmt.Errorf("checkpoint result cannot be nil")
 	}
-	return fmt.Errorf("Kubelet FCC creates checkpoint archives but this provider does not implement CRI/runtime restore; refusing to report restore success for target %s/%s on %s", target.Namespace, target.PodName, target.NodeName)
+	if target.PodName == "" || target.NodeName == "" {
+		return fmt.Errorf("restore target needs a pod name and a node name")
+	}
+	if p.restorer == nil {
+		return fmt.Errorf("%w: refusing to report restore success for target %s/%s on %s", ErrNodeRestoreUnavailable, target.Namespace, target.PodName, target.NodeName)
+	}
+	return nil
 }
 
 // fileSHA256 streams the file at path through SHA-256 and returns the hex digest.

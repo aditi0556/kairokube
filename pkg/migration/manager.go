@@ -32,6 +32,9 @@ type Manager struct {
 	migCounter      int64
 	requestMu       sync.Mutex
 	handledRequests map[string]struct{}
+	// cancels maps a running migration ID to its workflow cancel function.
+	cancelMu sync.Mutex
+	cancels  map[string]context.CancelFunc
 }
 
 // NewManager constructs a fully configured Migration Manager.
@@ -69,6 +72,7 @@ func NewManager(
 		metrics:         metrics,
 		migrations:      make(map[string]*Migration),
 		handledRequests: make(map[string]struct{}),
+		cancels:         make(map[string]context.CancelFunc),
 	}
 }
 
@@ -180,16 +184,38 @@ func (mgr *Manager) StartMigrationAsync(sourcePod, namespace, targetNode string)
 
 	mgr.metrics.IncMigrationTotal()
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), mgr.cfg.MigrationTimeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), mgr.cfg.MigrationTimeout)
+	mgr.cancelMu.Lock()
+	mgr.cancels[mig.ID] = cancel
+	mgr.cancelMu.Unlock()
 
+	go func() {
+		defer func() {
+			mgr.cancelMu.Lock()
+			delete(mgr.cancels, mig.ID)
+			mgr.cancelMu.Unlock()
+			cancel()
+		}()
 		if err := mgr.executeWorkflow(ctx, mig); err != nil {
 			log.Printf("[%s] Workflow finished with error: %v", mig.ID, err)
 		}
 	}()
 
 	return mig, nil
+}
+
+// CancelMigration asks a running migration to stop. Cancellation is delivered through
+// the workflow context, so the existing rollback paths handle the cleanup. It returns
+// false when the migration is unknown or has already finished.
+func (mgr *Manager) CancelMigration(id string) bool {
+	mgr.cancelMu.Lock()
+	cancel, ok := mgr.cancels[id]
+	mgr.cancelMu.Unlock()
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
 }
 
 // executeWorkflow executes the 15-step MS2M migration lifecycle.

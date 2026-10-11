@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KairoKube Control Console</title>
+<style>
+  :root {
+    --blue-900: #0a1a3a; --blue-700: #103a80; --blue-500: #1f6fe0;
+    --blue-300: #7fb3ff; --ink: #e8f1ff; --danger: #ff5c7a; --ok: #3ee39a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: system-ui, "Segoe UI", sans-serif; color: var(--ink);
+    background: radial-gradient(1200px 700px at 20% -10%, #1a4fa8 0%, transparent 60%),
+                radial-gradient(900px 600px at 110% 110%, #0c2d66 0%, transparent 55%),
+                linear-gradient(160deg, #06132e 0%, #0a1a3a 100%);
+    overflow-x: hidden;
+  }
+  .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .stars span {
+    position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #9cc6ff;
+    opacity: .6; animation: twinkle 3s ease-in-out infinite;
+  }
+  @keyframes twinkle { 0%,100% { opacity: .15; } 50% { opacity: .9; } }
+
+  main { position: relative; z-index: 1; padding: 1.5rem; max-width: 1300px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  h1 {
+    margin: 0; font-size: 1.8rem; letter-spacing: .04em;
+    background: linear-gradient(90deg, #ffffff, #7fb3ff 60%, #1f6fe0);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(31,111,224,.5);
+    animation: shimmer 6s linear infinite; background-size: 200% auto;
+  }
+  @keyframes shimmer { to { background-position: 200% center; } }
+  .pill {
+    padding: .35rem .8rem; border-radius: 999px; font-size: .85rem;
+    background: rgba(31,111,224,.2); border: 1px solid rgba(127,179,255,.4);
+  }
+  .pill.live::before {
+    content: ""; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%;
+    background: var(--ok); margin-right: .45rem; box-shadow: 0 0 10px var(--ok);
+    animation: pulse 1.6s ease-out infinite;
+  }
+  .pill.error { border-color: var(--danger); color: #ffd6de; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(62,227,154,.7); } 100% { box-shadow: 0 0 0 12px rgba(62,227,154,0); } }
+
+  .banner {
+    margin: 1rem 0; padding: .7rem 1rem; border-radius: 12px;
+    background: rgba(255,92,122,.12); border: 1px solid rgba(255,92,122,.45); font-size: .9rem;
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1.1rem; margin: 1.2rem 0 1.6rem; perspective: 1200px; }
+  .card {
+    position: relative; padding: 1rem 1.1rem; border-radius: 16px;
+    background: linear-gradient(145deg, rgba(31,111,224,.35), rgba(16,58,128,.5));
+    border: 1px solid rgba(127,179,255,.35);
+    box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.15);
+    transform-style: preserve-3d; transition: transform .35s ease, box-shadow .35s ease;
+    animation: floaty 7s ease-in-out infinite;
+  }
+  .card:nth-child(2n) { animation-delay: -2s; }
+  .card:nth-child(3n) { animation-delay: -4s; }
+  .card:hover { transform: rotateX(8deg) rotateY(-10deg) translateZ(18px); box-shadow: 0 30px 60px rgba(31,111,224,.45); }
+  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .card .label { font-size: .78rem; color: var(--blue-300); text-transform: uppercase; letter-spacing: .08em; }
+  .card .value { font-size: 1.9rem; font-weight: 700; margin-top: .25rem; text-shadow: 0 0 18px rgba(127,179,255,.6); }
+  .card .bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.12); margin-top: .6rem; overflow: hidden; }
+
+  .panel {
+    margin: 1.4rem 0; padding: 1.1rem; border-radius: 18px;
+    background: rgba(10,26,58,.7); border: 1px solid rgba(127,179,255,.3);
+    box-shadow: 0 24px 50px rgba(0,0,0,.4); backdrop-filter: blur(6px);
+  }
+  .panel h2 { margin: 0 0 .8rem; font-size: 1.05rem; color: var(--blue-300); letter-spacing: .05em; }
+  form.controls { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; }
+  label { display: flex; flex-direction: column; font-size: .75rem; color: var(--blue-300); gap: .3rem; }
+  input {
+    padding: .55rem .7rem; border-radius: 10px; min-width: 11rem;
+    background: rgba(6,19,46,.8); border: 1px solid rgba(127,179,255,.35); color: var(--ink); font-size: .9rem;
+    transition: box-shadow .25s, border-color .25s;
+  }
+  input:focus { outline: none; border-color: var(--blue-300); box-shadow: 0 0 0 3px rgba(31,111,224,.35); }
+  button {
+    position: relative; padding: .6rem 1.1rem; border-radius: 12px; border: none; cursor: pointer;
+    color: #fff; font-weight: 600; font-size: .9rem; letter-spacing: .03em;
+    background: linear-gradient(180deg, #3d8bff, #1f6fe0);
+    box-shadow: 0 6px 0 #0d3e8f, 0 12px 24px rgba(31,111,224,.4);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  button:hover { transform: translateY(-2px); }
+  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #0d3e8f; }
+  button.danger { background: linear-gradient(180deg, #ff7a92, #d9304f); box-shadow: 0 6px 0 #8f1a2d, 0 12px 24px rgba(255,92,122,.35); }
+  button.small { padding: .35rem .7rem; font-size: .78rem; border-radius: 8px; box-shadow: 0 3px 0 #0d3e8f; }
+  button.small.danger { box-shadow: 0 3px 0 #8f1a2d; }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .flash { font-size: .85rem; min-height: 1.2rem; margin-top: .6rem; color: var(--blue-300); }
+  .flash.err { color: #ffb3c1; }
+
+  .table-wrap { overflow-x: auto; border-radius: 14px; border: 1px solid rgba(127,179,255,.25); }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; background: rgba(6,19,46,.6); }
+  th, td { padding: .6rem .7rem; text-align: left; border-bottom: 1px solid rgba(127,179,255,.15); white-space: nowrap; }
+  th { color: var(--blue-300); font-weight: 600; background: rgba(16,58,128,.5); }
+  tbody tr { transition: background .25s, transform .25s; }
+  tbody tr:hover { background: rgba(31,111,224,.18); transform: translateX(4px); }
+  .state { padding: .2rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: rgba(127,179,255,.2); }
+  .state.run { background: rgba(31,111,224,.5); animation: glow 1.4s ease-in-out infinite; }
+  .state.ok { background: rgba(62,227,154,.25); color: #b9f5da; }
+  .state.bad { background: rgba(255,92,122,.3); color: #ffd3dc; }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 0 rgba(31,111,224,0); } 50% { box-shadow: 0 0 14px rgba(31,111,224,.9); } }
+  .muted { color: #8fb4e8; }
+
+  .prog { width: 110px; height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; position: relative; }
+  .prog > i { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: linear-gradient(90deg, var(--blue-300), var(--blue-500)); transition: width .6s ease; }
+  .prog.running > i::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+    animation: shine 1.2s linear infinite;
+  }
+  @keyframes shine { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+  footer { margin: 2rem 0 .5rem; font-size: .8rem; color: #7fa6d9; text-align: center; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+<main>
+  <header>
+    <h1>KAIROKUBE CONTROL CONSOLE</h1>
+    <div style="display:flex;gap:.6rem;align-items:center">
+      <span class="pill" id="clock">--:--:--</span>
+      <span class="pill live" id="link">connecting</span>
+    </div>
+  </header>
+
+  <div class="banner">Mock mode: a COMPLETED migration here is a simulated workflow and does not move a running process. Live Kubelet restore is not verified.</div>
+
+  <section class="cards" id="cards"></section>
+
+  <section class="panel">
+    <h2>START A MIGRATION</h2>
+    <form class="controls" id="startForm">
+      <label>Source pod <input name="source_pod" required placeholder="game2048-0" autocomplete="off"></label>
+      <label>Namespace <input name="namespace" placeholder="default" autocomplete="off"></label>
+      <label>Target node <input name="target_node" required placeholder="worker-2" autocomplete="off"></label>
+      <button type="submit" id="startBtn">Start migration</button>
+    </form>
+    <div class="flash" id="flash"></div>
+  </section>
+
+  <section class="panel">
+    <h2>MIGRATIONS</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Source</th><th>Target</th><th>Progress</th><th>State</th><th>Downtime (s)</th><th>Cutoff (s)</th><th>λ msg/s</th><th>μ msg/s</th><th>Error</th><th>Control</th></tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="11" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Reads GET /migrations and GET /metrics every 2.5 s. Controls call POST /migrations and POST /migrations/{id}/cancel.</footer>
+</main>
+
+
+<script>
+"use strict";
+
+// Escapes server-provided text before it goes into the page.
+function esc(v) {
+  return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function secs(ns) { return ns ? (ns / 1e9).toFixed(2) : "–"; }
+
+// Parses Prometheus text into a name -> value map (comment lines are skipped).
+function parseMetrics(text) {
+  var out = {};
+  text.split("\n").forEach(function (line) {
+    if (!line || line.charAt(0) === "#") return;
+    var p = line.split(/\s+/);
+    if (p.length === 2) out[p[0]] = Number(p[1]);
+  });
+  return out;
+}
+function setFlash(msg, isErr) {
+  var el = document.getElementById("flash");
+  el.textContent = msg;
+  el.className = "flash" + (isErr ? " err" : "");
+}
+
+// Decorative star field, generated once at load.
+(function buildStars() {
+  var host = document.getElementById("stars");
+  for (var i = 0; i < 70; i++) {
+    var s = document.createElement("span");
+    s.style.left = Math.random() * 100 + "%";
+    s.style.top = Math.random() * 100 + "%";
+    s.style.animationDelay = (Math.random() * 3).toFixed(2) + "s";
+    s.style.transform = "scale(" + (0.5 + Math.random() * 1.5).toFixed(2) + ")";
+    host.appendChild(s);
+  }
+})();
+
+function card(label, value, pct) {
+  var bar = pct == null ? "" : '<div class="bar"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>';
+  return '<div class="card"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + "</div>" + bar + "</div>";
+}
+
+var TERMINAL = { COMPLETED: 1, FAILED: 1, SOURCE_RESTORED: 1 };
+var ORDER = ["PREPARING", "CHECKPOINTING", "CHECKPOINT_CREATED", "TRANSFERRING", "RESTORING", "REPLAYING", "CUTOFF", "FINALIZING", "COMPLETED"];
+function progressPct(state) {
+  var i = ORDER.indexOf(state);
+  return i < 0 ? 0 : Math.round(((i + 1) / ORDER.length) * 100);
+}
+function stateClass(st) {
+  if (st === "COMPLETED") return "ok";
+  if (st === "FAILED" || st === "SOURCE_RESTORED" || st === "ROLLING_BACK") return "bad";
+  return "run";
+}
+
+
+// Pulls /migrations and /metrics and redraws the cards and the table.
+async function refresh() {
+  var link = document.getElementById("link");
+  try {
+    var r1 = await fetch("/migrations"), r2 = await fetch("/metrics");
+    if (!r1.ok || !r2.ok) throw new Error("HTTP " + r1.status + "/" + r2.status);
+    var migs = await r1.json();
+    var m = parseMetrics(await r2.text());
+
+    var total = m.migration_total || 0, ok = m.migration_success_total || 0;
+    document.getElementById("cards").innerHTML =
+      card("Attempts", total) +
+      card("Succeeded", ok, total ? (100 * ok) / total : 0) +
+      card("Failed", m.migration_failure_total || 0) +
+      card("Arrival λ (msg/s)", (m.message_arrival_rate || 0).toFixed(2)) +
+      card("Processing μ (msg/s)", (m.message_processing_rate || 0).toFixed(2)) +
+      card("Queue depth", m.queue_depth || 0) +
+      card("Last downtime (s)", (m.migration_downtime_seconds || 0).toFixed(3)) +
+      card("Checkpoint (bytes)", m.checkpoint_size_bytes || 0);
+
+    var rows = (migs || []).slice().reverse().map(function (x) {
+      var st = x.state, active = !TERMINAL[st];
+      var pct = active ? progressPct(st) : (st === "COMPLETED" ? 100 : 100);
+      var cancel = active
+        ? '<button class="small danger" data-cancel="' + esc(x.migration_id) + '">Cancel</button>'
+        : '<span class="muted">—</span>';
+      return "<tr>" +
+        "<td>" + esc(x.migration_id) + "</td>" +
+        "<td>" + esc(x.namespace) + "/" + esc(x.source_pod) + "</td>" +
+        "<td>" + esc(x.target_node) + "</td>" +
+        '<td><div class="prog' + (active ? " running" : "") + '"><i style="width:' + pct + '%"></i></div></td>' +
+        '<td><span class="state ' + stateClass(st) + '">' + esc(st) + "</span></td>" +
+        "<td>" + secs(x.downtime) + "</td>" +
+        "<td>" + secs(x.calculated_cutoff) + "</td>" +
+        "<td>" + Number(x.arrival_rate_lambda || 0).toFixed(2) + "</td>" +
+        "<td>" + Number(x.target_processing_rate_mu || 0).toFixed(2) + "</td>" +
+        '<td class="muted">' + esc(x.error_reason || "") + "</td>" +
+        "<td>" + cancel + "</td>" +
+        "</tr>";
+    }).join("");
+    document.getElementById("rows").innerHTML =
+      rows || '<tr><td colspan="11" class="muted">No migrations yet.</td></tr>';
+
+    link.textContent = "live";
+    link.className = "pill live";
+  } catch (err) {
+    link.textContent = "offline";
+    link.className = "pill error";
+    setFlash("Cannot reach the manager: " + err.message, true);
+  }
+}
+
+// Start form: POST /migrations. Shows the server's message on failure.
+document.getElementById("startForm").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  var f = ev.target, btn = document.getElementById("startBtn");
+  var body = {
+    source_pod: f.source_pod.value.trim(),
+    namespace: f.namespace.value.trim() || "default",
+    target_node: f.target_node.value.trim()
+  };
+  btn.disabled = true;
+  try {
+    var r = await fetch("/migrations", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    var text = await r.text();
+    if (!r.ok) throw new Error(text.trim());
+    var data = JSON.parse(text);
+    setFlash("Started " + data.migration_id + " (" + data.status + ")", false);
+    refresh();
+  } catch (err) {
+    setFlash("Start failed: " + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Cancel buttons: POST /migrations/{id}/cancel. The workflow rolls back on its own.
+document.getElementById("rows").addEventListener("click", async function (ev) {
+  var id = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-cancel");
+  if (!id) return;
+  ev.target.disabled = true;
+  try {
+    var r = await fetch("/migrations/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
+    var text = await r.text();
+    if (!r.ok) throw new Error(text.trim());
+    setFlash("Cancel requested for " + id + ". It will roll back.", false);
+  } catch (err) {
+    setFlash("Cancel failed: " + err.message, true);
+  }
+  refresh();
+});
+
+setInterval(function () {
+  document.getElementById("clock").textContent = new Date().toLocaleTimeString();
+}, 1000);
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>
+
+  .card .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--blue-300), var(--blue-500)); transition: width .8s ease; box-shadow: 0 0 10px var(--blue-500); }

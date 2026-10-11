@@ -42,7 +42,43 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/migrations/", s.handleMigrationByID)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/dashboard", s.handleDashboard)
 }
+
+// handleCancel serves POST /migrations/{id}/cancel. It requests cancellation of a
+// running migration; the workflow then rolls back through its existing paths.
+// It returns 202 when cancellation was requested, 404 when the migration is unknown
+// or no longer running, and 405 for other methods.
+func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if id == "" {
+		http.Error(w, "migration ID is required", http.StatusBadRequest)
+		return
+	}
+	if !s.manager.CancelMigration(id) {
+		http.Error(w, fmt.Sprintf("migration %q is not running", id), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"migration_id": id, "status": "cancel_requested"})
+}
+
+// handleDashboard serves the control console page. Only GET is allowed.
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(dashboardHTML)
+}
+
 
 // Start begins listening on the configured address.
 func (s *Server) Start() error {
@@ -126,12 +162,17 @@ func (s *Server) handleMigrations(w http.ResponseWriter, r *http.Request) {
 // handleMigrationByID serves GET /migrations/{id}. It returns the migration
 // snapshot as JSON, 404 if the ID is unknown, and 400 if the ID is empty.
 func (s *Server) handleMigrationByID(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/migrations/")
+	if strings.HasSuffix(rest, "/cancel") {
+		s.handleCancel(w, r, strings.TrimSuffix(rest, "/cancel"))
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/migrations/")
+	id := rest
 	if id == "" {
 		http.Error(w, "migration ID is required", http.StatusBadRequest)
 		return
