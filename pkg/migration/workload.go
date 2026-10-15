@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +36,13 @@ type WorkloadController interface {
 
 	// CleanupTarget terminates and cleans up the target workload upon migration failure.
 	CleanupTarget(ctx context.Context, namespace, targetPod string) error
+}
+
+// CheckpointImageWorkloadController creates a target whose container image is
+// a runtime-specific checkpoint image. CRI-O restores the process when it
+// creates that container.
+type CheckpointImageWorkloadController interface {
+	PrepareTargetFromCheckpoint(ctx context.Context, namespace, sourcePod, targetNode, checkpointImage string) (string, error)
 }
 
 // PodWorkloadController manages individual Pod workloads (MIGRATION_MODE=pod).
@@ -156,6 +164,31 @@ func (c *PodWorkloadController) PrepareTarget(ctx context.Context, namespace, so
 		return "", fmt.Errorf("failed to create target pod %s: %w", targetPodName, err)
 	}
 	return created.Name, nil
+}
+
+// PrepareTargetFromCheckpoint applies the CRI-O checkpoint image before the
+// target Pod leaves Pending, preventing a normal container from being mistaken
+// for a restored process.
+func (c *PodWorkloadController) PrepareTargetFromCheckpoint(ctx context.Context, namespace, sourcePod, targetNode, checkpointImage string) (string, error) {
+	targetName, err := c.PrepareTarget(ctx, namespace, sourcePod, targetNode)
+	if err != nil {
+		return "", err
+	}
+	pod, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, targetName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch checkpoint target %s: %w", targetName, err)
+	}
+	if pod.Status.Phase != "" && pod.Status.Phase != corev1.PodPending {
+		return "", fmt.Errorf("checkpoint target %s left Pending before checkpoint image could be applied", targetName)
+	}
+	if len(pod.Spec.Containers) == 0 {
+		return "", fmt.Errorf("checkpoint target %s has no containers", targetName)
+	}
+	pod.Spec.Containers[0].Image = strings.TrimPrefix(checkpointImage, "oci://")
+	if _, err := c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{}); err != nil {
+		return "", fmt.Errorf("failed to apply CRI-O checkpoint image to %s: %w", targetName, err)
+	}
+	return targetName, nil
 }
 
 // StopSource deletes the source Pod. The caller must only call it after the

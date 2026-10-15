@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Replace registry.example.com/kairokube before applying this overlay.
+resources:
+- rbac.yaml
+- rabbitmq.yaml
+- consumer-statefulset.yaml
+- migration-manager.yaml
+- producer.yaml
+
+images:
+- name: kairokube-consumer
+  newName: registry.example.com/kairokube/consumer
+  newTag: latest
+- name: kairokube-manager
+  newName: registry.example.com/kairokube/manager
+  newTag: latest
+- name: kairokube-producer
+  newName: registry.example.com/kairokube/producer
+  newTag: latest

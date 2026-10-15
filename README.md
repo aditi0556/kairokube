@@ -16,7 +16,7 @@ It provides:
 | Capability | Status |
 |---|---|
 | Pod Live Migration (Standalone Pods) | Implemented (`MIGRATION_MODE=pod`); clones workload spec onto target node |
-| Kubelet Container Checkpointing (FCC) | Implemented (`CHECKPOINT_PROVIDER=kubelet`); invokes official Kubelet API |
+| Kubelet Container Checkpointing (FCC) | Checkpoint request and runtime preflight implemented; restore requires a compatible runtime provider |
 | OCI Registry Artifact Transfer (ORAS) | Working (`TRANSFER_PROVIDER=registry`); verified push/pull to `ds0uz5/kairokube` |
 | Local File Transfer | Working (`TRANSFER_PROVIDER=file`); verifies SHA-256 checksums |
 | RabbitMQ Messaging Pipeline | Working (durable queues, manual ACK, duplicate detection) |
@@ -50,9 +50,36 @@ docker-compose.yml     Local multi-container stack: RabbitMQ, consumer, producer
 ## Prerequisites
 
 - **Go 1.22+**
-- **Docker** / **Podman** (Docker Desktop on Windows/Linux or local container runtime)
+- **Docker** for building and pushing images. Kubernetes runtime support is listed below.
 - **kubectl** & a cluster (e.g. kind) with `--feature-gates=ContainerCheckpoint=true` for live Kubernetes checkpointing
 - **CRIU** (3.16+ or 4.2+) on cluster worker nodes
+
+### Runtime support matrix
+
+KairoKube separates image tooling from checkpoint runtime support:
+
+| Environment | Dashboard/API | Real checkpoint migration |
+|---|---:|---:|
+| Docker Desktop + kind | Yes | No guarantee; use `EXECUTION_MODE=demo` or `mock` |
+| Linux Kubernetes + CRI-O + CRIU | Yes | Supported checkpoint path; use a CRI-compatible restore provider |
+| Linux Kubernetes + containerd + CRIU | Yes | Runtime/version dependent; validate before enabling migrations |
+| Linux Docker Engine | Yes | Docker-native checkpoint experiments only |
+
+Kubernetes checkpoints are created by Kubelet through the node's CRI runtime.
+They must not be restored with Docker's native checkpoint command unless the
+source artifact was created by Docker itself. Set `EXECUTION_MODE=full` only on
+Linux nodes whose runtime and restore provider have been validated. The manager
+now performs a runtime preflight and rejects unsupported Docker/Podman CRI
+nodes before checkpointing.
+
+For Fedora nodes, run `scripts/fedora_crio_prereq.sh` on every node, then use
+`k8s/kubeadm-crio-config.yaml` with `kubeadm init` on the control plane and the
+generated join command on workers. Enable CRI-O restore only on a patched CRI-O
+release appropriate for the cluster.
+
+Use `EXECUTION_MODE=demo` for a deployed dashboard with simulated migration, or
+`EXECUTION_MODE=mock` for a fully local simulation. `auto` preserves the
+explicit provider settings for production deployments.
 
 ---
 
@@ -183,7 +210,9 @@ Deploy all components into an active cluster:
 |---|---|---|
 | `MIGRATION_MODE` | `pod` | Workload controller mode: `pod` or `mock`. |
 | `CHECKPOINT_PROVIDER` | `kubelet` | `kubelet` (Kubernetes FCC) or `mock`. |
-| `TRANSFER_PROVIDER` | `registry` | `registry` (ORAS OCI transfer), `file` (shared filesystem), or `mock`. |
+| `TRANSFER_PROVIDER` | `registry` | `registry` (generic OCI artifact), `crio-registry` (annotated CRI-O image), `file`, or `mock`. |
+| `EXECUTION_MODE` | `auto` | `auto`, `full`, `demo`, or `mock`; demo/mock select safe simulation providers. |
+| `RESTORE_PROVIDER` | `docker` | `docker` for Docker-native checkpoints, `crio` for CRI-O checkpoint images, or `mock`. |
 | `CHECKPOINT_REGISTRY_REPOSITORY` | `ds0uz5/kairokube` | Target OCI repository for checkpoint artifacts. |
 | `CHECKPOINT_REGISTRY_USERNAME` | `ds0uz5` | Registry authentication username. |
 | `CHECKPOINT_REGISTRY_PASSWORD` | empty | Registry Personal Access Token or password. |

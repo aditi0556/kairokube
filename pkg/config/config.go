@@ -31,12 +31,14 @@ type Config struct {
 	MigrationTimeout  time.Duration
 
 	// Migration Policies and Modes
+	ExecutionMode     string // "auto", "full", "demo", or "mock"
 	MigrationMode     string // "mock", standalone "pod", or unsupported "statefulset"
 	FeasibilityPolicy string // "warn", "reject", "force"
 
 	// Providers
 	CheckpointProvider string // "kubelet" or "mock"
-	TransferProvider   string // "file", "registry", or "mock"
+	TransferProvider   string // "file", "registry", "crio-registry", or "mock"
+	RestoreProvider    string // "docker", "crio", or "mock"
 
 	// Kubelet FCC Settings
 	KubeletPort   int
@@ -58,6 +60,9 @@ func (c *Config) Validate() error {
 	if c == nil {
 		return fmt.Errorf("configuration is nil")
 	}
+	if c.ExecutionMode != "auto" && c.ExecutionMode != "full" && c.ExecutionMode != "demo" && c.ExecutionMode != "mock" {
+		return fmt.Errorf("unsupported EXECUTION_MODE %q (use auto, full, demo, or mock)", c.ExecutionMode)
+	}
 	if c.MigrationMode != "pod" && c.MigrationMode != "mock" && c.MigrationMode != "statefulset" {
 		return fmt.Errorf("unsupported MIGRATION_MODE %q (use pod, mock, or statefulset)", c.MigrationMode)
 	}
@@ -67,17 +72,32 @@ func (c *Config) Validate() error {
 	if c.CheckpointProvider != "mock" && c.CheckpointProvider != "kubelet" {
 		return fmt.Errorf("unsupported CHECKPOINT_PROVIDER %q (use mock or kubelet)", c.CheckpointProvider)
 	}
-	if c.TransferProvider != "file" && c.TransferProvider != "registry" && c.TransferProvider != "mock" {
-		return fmt.Errorf("unsupported TRANSFER_PROVIDER %q (use file, registry, or mock)", c.TransferProvider)
+	if c.TransferProvider != "file" && c.TransferProvider != "registry" && c.TransferProvider != "crio-registry" && c.TransferProvider != "mock" {
+		return fmt.Errorf("unsupported TRANSFER_PROVIDER %q (use file, registry, crio-registry, or mock)", c.TransferProvider)
+	}
+	if c.RestoreProvider != "docker" && c.RestoreProvider != "crio" && c.RestoreProvider != "mock" {
+		return fmt.Errorf("unsupported RESTORE_PROVIDER %q (use docker, crio, or mock)", c.RestoreProvider)
 	}
 	if c.TransferProvider == "registry" && strings.TrimSpace(c.RegistryRepository) == "" {
 		return fmt.Errorf("TRANSFER_PROVIDER=registry requires CHECKPOINT_REGISTRY_REPOSITORY")
+	}
+	if c.TransferProvider == "crio-registry" && strings.TrimSpace(c.RegistryRepository) == "" {
+		return fmt.Errorf("TRANSFER_PROVIDER=crio-registry requires CHECKPOINT_REGISTRY_REPOSITORY")
+	}
+	if c.TransferProvider == "crio-registry" && c.RestoreProvider != "crio" {
+		return fmt.Errorf("TRANSFER_PROVIDER=crio-registry requires RESTORE_PROVIDER=crio")
 	}
 	if c.MigrationMode == "mock" && c.CheckpointProvider != "mock" {
 		return fmt.Errorf("MIGRATION_MODE=mock requires CHECKPOINT_PROVIDER=mock")
 	}
 	if c.MigrationMode == "pod" && c.CheckpointProvider == "mock" {
 		return fmt.Errorf("MIGRATION_MODE=pod cannot use CHECKPOINT_PROVIDER=mock; select MIGRATION_MODE=mock for simulation")
+	}
+	if c.ExecutionMode == "full" && (c.CheckpointProvider == "mock" || c.TransferProvider == "mock" || c.RestoreProvider == "mock") {
+		return fmt.Errorf("EXECUTION_MODE=full cannot use mock providers")
+	}
+	if c.ExecutionMode == "mock" && (c.MigrationMode != "mock" || c.CheckpointProvider != "mock" || c.TransferProvider != "mock" || c.RestoreProvider != "mock") {
+		return fmt.Errorf("EXECUTION_MODE=mock requires all migration providers and MIGRATION_MODE=mock")
 	}
 	if c.FeasibilityPolicy != "warn" && c.FeasibilityPolicy != "reject" && c.FeasibilityPolicy != "force" {
 		return fmt.Errorf("unsupported MIGRATION_FEASIBILITY_POLICY %q (use warn, reject, or force)", c.FeasibilityPolicy)
@@ -111,10 +131,12 @@ func Load() *Config {
 		RestoreTimeout:     getDurationEnv("RESTORE_TIMEOUT", 60*time.Second),
 		ReplayTimeout:      getDurationEnv("REPLAY_TIMEOUT", 30*time.Second),
 		MigrationTimeout:   getDurationEnv("MIGRATION_TIMEOUT", 5*time.Minute),
+		ExecutionMode:      strings.ToLower(getEnv("EXECUTION_MODE", "auto")),
 		MigrationMode:      strings.ToLower(getEnv("MIGRATION_MODE", "mock")),
 		FeasibilityPolicy:  strings.ToLower(getEnv("MIGRATION_FEASIBILITY_POLICY", "warn")),
 		CheckpointProvider: strings.ToLower(getEnv("CHECKPOINT_PROVIDER", "mock")),
 		TransferProvider:   strings.ToLower(getEnv("TRANSFER_PROVIDER", "mock")),
+		RestoreProvider:    strings.ToLower(getEnv("RESTORE_PROVIDER", "docker")),
 		KubeletPort:        getIntEnv("KUBELET_PORT", 10250),
 		KubeletScheme:      getEnv("KUBELET_SCHEME", "https"),
 		CheckpointDir:      getEnv("CHECKPOINT_DIR", filepath.Join(os.TempDir(), "kairokube-checkpoints")),
@@ -123,6 +145,21 @@ func Load() *Config {
 		RegistryPassword:   getEnv("CHECKPOINT_REGISTRY_PASSWORD", ""),
 		ServerPort:         getEnv("SERVER_PORT", "8080"),
 		DebugLogging:       getBoolEnv("DEBUG_LOGGING", false),
+	}
+}
+
+// ApplyExecutionMode makes demo and mock deployments deterministic. Auto and
+// full preserve the explicitly selected production providers.
+func (c *Config) ApplyExecutionMode() {
+	if c == nil {
+		return
+	}
+	if c.ExecutionMode == "demo" || c.ExecutionMode == "mock" {
+		c.ExecutionMode = "mock"
+		c.MigrationMode = "mock"
+		c.CheckpointProvider = "mock"
+		c.TransferProvider = "mock"
+		c.RestoreProvider = "mock"
 	}
 }
 

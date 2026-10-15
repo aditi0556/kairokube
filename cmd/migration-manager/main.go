@@ -26,6 +26,7 @@ func main() {
 	log.Println("Initializing MS2M Migration Manager...")
 
 	cfg := config.Load()
+	cfg.ApplyExecutionMode()
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
@@ -58,10 +59,16 @@ func main() {
 			UseNodeProxy: true,
 			KubeletPort:  cfg.KubeletPort,
 		})
-		// Wire production node restorer with CRIU support
 		criuPath := getEnv("CRIU_PATH", "/usr/sbin/criu")
-		restorer := checkpoint.NewDockerRestorer(nil).WithRegistryCredentials(cfg.RegistryUsername, cfg.RegistryPassword)
-		cp = kcp.WithRestorer(restorer, criuPath)
+		if cfg.RestoreProvider == "crio" {
+			log.Println("Configuring CRI-O checkpoint-image restore")
+			cp = kcp.WithRestorer(checkpoint.NewCRIOImageRestorer(), criuPath)
+		} else if cfg.RestoreProvider == "docker" {
+			restorer := checkpoint.NewDockerRestorer(nil).WithRegistryCredentials(cfg.RegistryUsername, cfg.RegistryPassword)
+			cp = kcp.WithRestorer(restorer, criuPath)
+		} else {
+			log.Fatalf("RESTORE_PROVIDER=%q cannot restore a live Kubernetes checkpoint", cfg.RestoreProvider)
+		}
 	} else if cfg.CheckpointProvider == "mock" {
 		log.Printf("Configuring MOCK checkpoint provider in directory %s; this is simulated state, not a process checkpoint", cfg.CheckpointDir)
 		cp = checkpoint.NewMockCheckpointProvider(cfg.CheckpointDir)
@@ -76,6 +83,9 @@ func main() {
 	} else if cfg.TransferProvider == "registry" {
 		log.Printf("Configuring OCI registry checkpoint transfer: %s", cfg.RegistryRepository)
 		tp = transfer.NewRegistryTransferProvider(cfg.RegistryRepository, nil).WithCredentials(cfg.RegistryUsername, cfg.RegistryPassword)
+	} else if cfg.TransferProvider == "crio-registry" {
+		log.Printf("Configuring CRI-O checkpoint-image transfer: %s", cfg.RegistryRepository)
+		tp = transfer.NewCRIORegistryTransferProvider(cfg.RegistryRepository, nil).WithContainerName(getEnv("CHECKPOINT_CONTAINER_NAME", ""))
 	} else {
 		tp = transfer.NewFileTransferProvider(cfg.CheckpointDir)
 	}

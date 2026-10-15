@@ -8,14 +8,16 @@ ARG GOARCH=amd64
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
+RUN go install oras.land/oras/cmd/oras@v1.2.3
 COPY cmd/migration-manager ./cmd/migration-manager
 COPY pkg/ ./pkg/
 RUN go build -ldflags="-s -w" -o /manager ./cmd/migration-manager
 
 FROM alpine:3.20
-RUN apk add --no-cache docker-cli oras
+RUN apk add --no-cache ca-certificates docker-cli
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /
 COPY --from=builder /manager /manager
+COPY --from=builder /go/bin/oras /usr/local/bin/oras
 USER appuser
 ENTRYPOINT ["/manager"]

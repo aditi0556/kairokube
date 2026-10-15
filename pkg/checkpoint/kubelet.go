@@ -112,6 +112,14 @@ func (p *KubeletFCCProvider) CreateCheckpoint(ctx context.Context, namespace, po
 	if nodeName == "" {
 		return nil, fmt.Errorf("pod %s/%s is not assigned to a node", namespace, podName)
 	}
+	node, err := p.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect checkpoint runtime on node %s: %w", nodeName, err)
+	}
+	if err := ValidateCheckpointRuntime(node.Status.NodeInfo.ContainerRuntimeVersion); err != nil {
+		return nil, fmt.Errorf("checkpoint runtime preflight failed on node %s: %w", nodeName, err)
+	}
+	runtimeVersion := node.Status.NodeInfo.ContainerRuntimeVersion
 
 	var checkpointPath string
 
@@ -215,6 +223,7 @@ func (p *KubeletFCCProvider) CreateCheckpoint(ctx context.Context, namespace, po
 		CreatedAt:     time.Now().UTC(),
 		Duration:      duration,
 		Checksum:      checksum,
+		Runtime:       runtimeVersion,
 	}, nil
 }
 

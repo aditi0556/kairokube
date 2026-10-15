@@ -28,6 +28,7 @@ type CheckpointResult struct {
 	CreatedAt     time.Time     `json:"created_at"`
 	Duration      time.Duration `json:"duration"`
 	Checksum      string        `json:"checksum"` // SHA-256
+	Runtime       string        `json:"runtime,omitempty"`
 }
 
 // Target defines the target environment for checkpoint restoration.

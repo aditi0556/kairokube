@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -341,7 +342,11 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 			}
 		}
 		var prepErr error
-		targetPodName, prepErr = mgr.workloadCtrl.PrepareTarget(ctx, mig.Namespace, mig.SourcePod, mig.TargetNode)
+		if imageController, ok := mgr.workloadCtrl.(CheckpointImageWorkloadController); ok && strings.HasPrefix(ckptResult.FilePath, "oci://") {
+			targetPodName, prepErr = imageController.PrepareTargetFromCheckpoint(ctx, mig.Namespace, mig.SourcePod, mig.TargetNode, ckptResult.FilePath)
+		} else {
+			targetPodName, prepErr = mgr.workloadCtrl.PrepareTarget(ctx, mig.Namespace, mig.SourcePod, mig.TargetNode)
+		}
 		if prepErr != nil {
 			mgr.rollbackMgr.ExecuteRollback(ctx, mig, StateRestoring, fmt.Errorf("target preparation failed: %w", prepErr))
 			return prepErr

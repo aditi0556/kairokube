@@ -39,9 +39,13 @@ services:
       QUEUE_NAME: microservices-queue
       MIGRATION_REQUEST_QUEUE: migration-requests
       CONSUMER_STATUS_URL: http://consumer:8081/state
-      MIGRATION_MODE: pod
-      CHECKPOINT_PROVIDER: kubelet
-      TRANSFER_PROVIDER: file
+      # Compose is a portable local demo. Real Kubelet/CRIU migration requires
+      # a Linux Kubernetes node with a supported CRI runtime.
+      EXECUTION_MODE: demo
+      MIGRATION_MODE: mock
+      CHECKPOINT_PROVIDER: mock
+      TRANSFER_PROVIDER: mock
+      RESTORE_PROVIDER: mock
       SERVER_PORT: "8080"
     depends_on:
       rabbitmq:
