@@ -5,8 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
+
+// DefaultCommandRunner executes commands via the local OS shell / exec.CommandContext.
+var DefaultCommandRunner CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	return cmd.CombinedOutput()
+}
 
 // CommandRunner executes an external command and returns its standard output.
 // It is injected so restore logic can be tested without a container runtime.
@@ -26,7 +33,11 @@ type PodmanRestorer struct {
 var ErrRestoreUnavailable = errors.New("podman restore helper has no command runner configured")
 
 // NewPodmanRestorer creates a restorer that executes commands with run.
+// If run is nil, DefaultCommandRunner is used.
 func NewPodmanRestorer(run CommandRunner) *PodmanRestorer {
+	if run == nil {
+		run = DefaultCommandRunner
+	}
 	return &PodmanRestorer{run: run}
 }
 
@@ -61,3 +72,10 @@ func (p *PodmanRestorer) Restore(ctx context.Context, archivePath, name string) 
 	}
 	return id, nil
 }
+
+// RestoreArchive satisfies NodeRestorer interface for cluster live migration.
+func (p *PodmanRestorer) RestoreArchive(ctx context.Context, archivePath, containerID string) (string, error) {
+	return p.Restore(ctx, archivePath, containerID)
+}
+
+var _ NodeRestorer = (*PodmanRestorer)(nil)

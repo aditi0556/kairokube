@@ -29,7 +29,11 @@ type CtrRestorer struct {
 }
 
 // NewCtrRestorer creates a CtrRestorer that executes ctr through run.
+// If run is nil, DefaultCommandRunner is used.
 func NewCtrRestorer(run CommandRunner) *CtrRestorer {
+	if run == nil {
+		run = DefaultCommandRunner
+	}
 	return &CtrRestorer{run: run}
 }
 

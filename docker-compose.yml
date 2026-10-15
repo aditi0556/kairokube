@@ -16,15 +16,14 @@ services:
       timeout: 5s
       retries: 12
 
-  game2048:
+  consumer:
     build:
       context: .
-      dockerfile: build/Dockerfile.game2048
+      dockerfile: build/Dockerfile.consumer
     environment:
       RABBITMQ_URL: amqp://kairokube:kairokube-dev@rabbitmq:5672/
       QUEUE_NAME: microservices-queue
       STATUS_PORT: "8081"
-      PROCESSING_DELAY_MS: "0"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -39,15 +38,15 @@ services:
       RABBITMQ_URL: amqp://kairokube:kairokube-dev@rabbitmq:5672/
       QUEUE_NAME: microservices-queue
       MIGRATION_REQUEST_QUEUE: migration-requests
-      CONSUMER_STATUS_URL: http://game2048:8081/state
-      MIGRATION_MODE: mock
-      CHECKPOINT_PROVIDER: mock
-      TRANSFER_PROVIDER: mock
+      CONSUMER_STATUS_URL: http://consumer:8081/state
+      MIGRATION_MODE: pod
+      CHECKPOINT_PROVIDER: kubelet
+      TRANSFER_PROVIDER: file
       SERVER_PORT: "8080"
     depends_on:
       rabbitmq:
         condition: service_healthy
-      game2048:
+      consumer:
         condition: service_started
     ports:
       - "8080:8080"
@@ -66,9 +65,7 @@ services:
       QUEUE_NAME: microservices-queue
       PUBLISH_RATE_MSG_PER_SEC: "2"
       MAX_MESSAGES: "0"
-      MESSAGE_FILE: /app/game/moves.jsonl
-    volumes:
-      - ./game/moves.jsonl:/app/game/moves.jsonl:ro
+      MESSAGE_PAYLOAD: '{"event":"task.created","priority":"high","data":"payload-bytes"}'
     depends_on:
       rabbitmq:
         condition: service_healthy

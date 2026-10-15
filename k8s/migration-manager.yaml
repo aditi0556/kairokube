@@ -35,13 +35,13 @@ spec:
         - name: QUEUE_NAME
           value: "microservices-queue"
         - name: MIGRATION_MODE
-          value: "mock"
+          value: "pod"
         - name: MIGRATION_FEASIBILITY_POLICY
           value: "warn"
         - name: CHECKPOINT_PROVIDER
-          value: "mock"
+          value: "kubelet"
         - name: TRANSFER_PROVIDER
-          value: "mock"
+          value: "file"
         - name: MAX_REPLAY_TIME
           value: "5s"
         - name: MIN_CUTOFF_TIME

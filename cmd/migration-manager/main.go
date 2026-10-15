@@ -54,10 +54,14 @@ func main() {
 			log.Fatal("CHECKPOINT_PROVIDER=kubelet requires a working Kubernetes client")
 		}
 		log.Printf("Configuring Kubelet FCC Checkpoint Provider (port %d)", cfg.KubeletPort)
-		cp = checkpoint.NewKubeletFCCProvider(k8sClient.Clientset, k8sClient.RestConfig, checkpoint.KubeletFCCConfig{
+		kcp := checkpoint.NewKubeletFCCProvider(k8sClient.Clientset, k8sClient.RestConfig, checkpoint.KubeletFCCConfig{
 			UseNodeProxy: true,
 			KubeletPort:  cfg.KubeletPort,
 		})
+		// Wire production node restorer with CRIU support
+		criuPath := getEnv("CRIU_PATH", "/usr/sbin/criu")
+		restorer := checkpoint.NewPodmanRestorer(nil)
+		cp = kcp.WithRestorer(restorer, criuPath)
 	} else if cfg.CheckpointProvider == "mock" {
 		log.Printf("Configuring MOCK checkpoint provider in directory %s; this is simulated state, not a process checkpoint", cfg.CheckpointDir)
 		cp = checkpoint.NewMockCheckpointProvider(cfg.CheckpointDir)

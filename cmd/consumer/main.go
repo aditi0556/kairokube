@@ -1,12 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -17,13 +18,15 @@ import (
 // State represents observable in-memory state that is captured during forensic checkpointing
 // and reconstructed via message replay during migration.
 type State struct {
-	mu                 sync.RWMutex
-	MessageCount       int   `json:"message_count"`
-	LastSequence       int64 `json:"last_sequence"`
-	MessagesReceived   int64 `json:"messages_received"`
-	MessagesProcessed  int64 `json:"messages_processed"`
-	MessagesReplayed   int64 `json:"messages_replayed"`
-	DuplicatesDetected int64 `json:"duplicates_detected"`
+	mu                  sync.RWMutex
+	MessageCount        int    `json:"message_count"`
+	LastSequence        int64  `json:"last_sequence"`
+	LastProcessedHash   string `json:"last_processed_hash"`
+	TotalBytesProcessed int64  `json:"total_bytes_processed"`
+	MessagesReceived    int64  `json:"messages_received"`
+	MessagesProcessed   int64  `json:"messages_processed"`
+	MessagesReplayed    int64  `json:"messages_replayed"`
+	DuplicatesDetected  int64  `json:"duplicates_detected"`
 }
 
 // main consumes application messages with manual acknowledgement. Duplicates are
@@ -35,11 +38,9 @@ func main() {
 	rabbitURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 	queueName := getEnv("QUEUE_NAME", "microservices-queue")
 	statusPort := getEnv("STATUS_PORT", "8081")
-	processingDelay := getProcessingDelay()
 
 	log.Printf("RabbitMQ URL: %s", rabbitURL)
 	log.Printf("Queue: %s", queueName)
-	log.Printf("Processing delay: %s", processingDelay)
 
 	state := &State{}
 	detector := rabbitmq.NewDuplicateDetector(100000, 30*time.Minute)
@@ -103,24 +104,26 @@ func main() {
 				continue
 			}
 
-			// Simulate per-message processing latency
-			if processingDelay > 0 {
-				time.Sleep(processingDelay)
-			}
+			// Execute actual message processing: parse and verify payload, compute cryptographic hash
+			payloadBytes := []byte(msg.Payload)
+			hash := sha256.Sum256(append(delivery.Body, []byte(msg.ID)...))
+			hashHex := hex.EncodeToString(hash[:])
 
-			// Update in-memory application state
+			// Update in-memory application state with computed metrics
 			state.mu.Lock()
 			state.MessageCount++
 			if msg.Sequence > state.LastSequence {
 				state.LastSequence = msg.Sequence
 			}
+			state.LastProcessedHash = hashHex
+			state.TotalBytesProcessed += int64(len(payloadBytes))
 			state.MessagesProcessed++
 			currCount := state.MessageCount
 			currSeq := state.LastSequence
 			state.mu.Unlock()
 
-			if currCount%20 == 0 || processingDelay >= 100*time.Millisecond {
-				log.Printf("Processed message id=%s seq=%d MessageCount=%d", msg.ID, currSeq, currCount)
+			if currCount%20 == 0 || currCount == 1 {
+				log.Printf("Processed message id=%s seq=%d count=%d bytes=%d hash=%.8s...", msg.ID, currSeq, currCount, len(payloadBytes), hashHex)
 			}
 
 			// Acknowledge message only after processing succeeds
@@ -159,18 +162,4 @@ func getEnv(name, defaultValue string) string {
 		return val
 	}
 	return defaultValue
-}
-
-// getProcessingDelay reads PROCESSING_DELAY_MS, defaulting to 50 ms when it is
-// unset or invalid. A value of zero disables the delay.
-func getProcessingDelay() time.Duration {
-	value := os.Getenv("PROCESSING_DELAY_MS")
-	if value == "" {
-		return 50 * time.Millisecond
-	}
-	delayMS, err := strconv.Atoi(value)
-	if err != nil || delayMS < 0 {
-		return 50 * time.Millisecond
-	}
-	return time.Duration(delayMS) * time.Millisecond
 }
