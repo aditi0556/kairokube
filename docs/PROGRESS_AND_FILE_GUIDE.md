@@ -11,7 +11,7 @@ The project has four parts:
 1. A **migration manager** that runs the migration state machine and exposes an HTTP API.
 2. **Workloads** (a 2048 game and a plain consumer) that consume RabbitMQ messages and expose their state for verification.
 3. A **producer** that publishes messages and can trigger migrations.
-4. **Checkpoint providers**: a mock, a Kubelet checkpoint client, and a podman restore helper.
+4. **Checkpoint providers**: a mock, a Kubelet checkpoint client, and a Docker restore helper.
 
 ## 2. Status at a glance
 
@@ -23,7 +23,7 @@ The project has four parts:
 | Duplicate detection (in memory) | Works, limited | Unit tests; not durable across restarts |
 | Adaptive cutoff and feasibility | Implemented, unit tested | `pkg/ms2m` tests pass |
 | Kubelet checkpoint API call | Works on kind | Returned a 328 KB CRIU archive |
-| Podman checkpoint and restore (rootful) | Works | `scripts/podman_ckpt_smoke.sh` exit 0 |
+| Docker checkpoint and restore (rootful) | Supported | `scripts/docker_ckpt_smoke.sh` uses Docker's experimental checkpoint CLI |
 | Restore of a Kubelet archive | **Not working** | No restore path verified yet |
 | Live migration with real restore | **Not working** | Blocked on the two items above |
 | StatefulSet migration | Not implemented | Startup rejects the mode |
@@ -37,7 +37,7 @@ The project has four parts:
 
 **Phase 3: the 2048 workload.** The consumer was replaced in Compose by `game2048`, which applies moves to a 4x4 board. A bug was fixed: the board started empty, so no tile ever spawned. `NewBoard` now seeds two tiles with a fixed seed, so every node starts from the same state.
 
-**Phase 4: CRIU investigation.** Rootless podman cannot checkpoint, so the checkpoint path runs as root. Podman checkpoint and restore worked after installing `iptables` (CRIU's network dump calls `iptables-restore`) and granting CRIU its capability. A kind cluster was created with three nodes. The Kubelet checkpoint endpoint was reachable, but the dump failed on the stock Debian CRIU 3.17.1 with `vdso: Unexpected rt vDSO area bounds`. Building CRIU 4.2 from source inside the nodes fixed it, and the Kubelet call then returned a real archive.
+**Phase 4: CRIU investigation.** Docker checkpoint and restore require a Linux Docker Engine, CRIU, and the experimental checkpoint feature. A kind cluster was created with three nodes. The Kubelet checkpoint endpoint was reachable, but the dump failed on the stock Debian CRIU 3.17.1 with `vdso: Unexpected rt vDSO area bounds`. Building CRIU 4.2 from source inside the nodes fixed it, and the Kubelet call then returned a real archive.
 
 **Phase 5: restore investigation (current).** containerd 2.1.3 exposes `ctr containers checkpoint --task` and `ctr containers restore --live`, confirmed from `--help` inside the node. A counter task runs under `ctr`. The checkpoint test failed because the rebuilt node had no CRIU. The CRIU 4.2 source build on the fresh node fails in `make` at `images/stats.pb-c.c`. The restore has not been tested.
 
@@ -140,11 +140,11 @@ The migration-control schema lives in `migration_request.go` and is kept separat
 
 **`kubelet.go`** implements `KubeletFCCProvider`, the real checkpoint client. `CreateCheckpoint` looks up the pod's node, then calls `POST /api/v1/nodes/<node>/proxy/checkpoint/<ns>/<pod>/<container>` through the API server (the node-proxy path). It parses `{"items":[path]}`, then tries to stat and checksum the archive. That read only succeeds if the archive is visible to the manager process. **`RestoreCheckpoint` always fails**: `ValidateRestore` returns an explicit error saying restore is not implemented. This is deliberate, so no migration can report a restored target through this path. `fileSHA256` computes the digest.
 
-**`podman_restore.go`** implements `PodmanRestorer`, a node-side helper. `Restore` checks the archive exists and is non-empty, runs `podman container restore --import <archive> --name <name>` through an injected `CommandRunner`, and returns the container ID only if podman printed one. It is verified for podman-format archives. It does **not** read Kubelet or containerd archives.
+**`docker_restore.go`** implements `DockerRestorer`, a node-side helper. `RestoreArchive` validates the Docker checkpoint directory, runs `docker start --checkpoint <name> --checkpoint-dir <dir> <container>` through an injected `CommandRunner`, and returns the restored container ID. It does **not** import Kubelet-produced tar archives.
 
 **`provider_test.go`** tests mock creation and restore, mock failure injection, and that the Kubelet provider refuses restore.
 
-**`podman_restore_test.go`** tests the restorer with a fake runner: correct arguments, rejection of invalid inputs without running anything, command failure propagation, and the empty-ID check.
+**`docker_restore_test.go`** tests Docker command construction, checkpoint path handling, invalid inputs, command failure propagation, and Docker's empty-output fallback.
 
 ### 5.5 Transfer (`pkg/transfer/`)
 
@@ -191,7 +191,7 @@ The migration-control schema lives in `migration_request.go` and is kept separat
 
 **`scripts/criu_probe.sh`** checks checkpoint prerequisites in WSL: kernel config options, presence of CRIU and runtimes, and the user's groups. It is read-only.
 
-**`scripts/podman_ckpt_smoke.sh`** runs a rootful podman checkpoint and restore of a counter container and checks that the counter resumes. It is the verified standalone checkpoint path.
+**`scripts/docker_ckpt_smoke.sh`** runs a Docker checkpoint and restore of a counter container and checks that the counter resumes. It requires a Linux Docker Engine with CRIU checkpoint support.
 
 **`scripts/kind_node_criu.sh`** builds CRIU 4.2 from upstream source inside a kind node and links it onto the PATH. It is the step that made the Kubelet checkpoint work. The current build fails at `images/stats.pb-c.c` on a fresh node, which is the open problem noted in section 6.
 
@@ -208,8 +208,6 @@ The `node_*` scripts below are one-off diagnostics from the restore investigatio
 **`scripts/benchmark.go`** runs a mock simulation over lambda values of 4 to 20 msg/s and writes CSV and JSON. It uses synthetic rates and is not a cluster measurement.
 
 **`scripts/run_benchmark.ps1`** runs `benchmark.go` and reports success or failure.
-
-**`scripts/generate_guide.py`** is an earlier generator for a file guide. It has not been run against the current code.
 
 **`game/moves.jsonl`** is the 16-move script the producer cycles through.
 

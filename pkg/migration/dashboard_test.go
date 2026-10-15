@@ -29,7 +29,7 @@ func TestDashboardServesPageWithCSP(t *testing.T) {
 		t.Fatalf("CSP %q must allow same-origin scripts", csp)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"/migrations", "/metrics", "/cancel", "KairoKube", "/dashboard-assets/three.module.min.js", "importmap"} {
+	for _, want := range []string{"/migrations", "/metrics", "/health", "/migrations/", "/cancel", "KairoKube", "/dashboard-assets/three.module.min.js", "importmap"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page missing %q", want)
 		}

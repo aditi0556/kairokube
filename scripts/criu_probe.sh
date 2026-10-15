@@ -15,7 +15,7 @@ else
   echo "config: /proc/config.gz not readable"
 fi
 
-for tool in criu runc crun podman crictl containerd crio; do
+for tool in criu runc crun docker crictl containerd crio; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "tool ${tool}: $(command -v "$tool")"
   else

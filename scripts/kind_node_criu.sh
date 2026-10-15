@@ -9,7 +9,7 @@
 set -eu
 node=${1:-kairokube-worker}
 
-podman exec "$node" sh -c '
+docker exec "$node" sh -c '
   set -e
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq

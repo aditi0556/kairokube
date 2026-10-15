@@ -36,12 +36,17 @@ type Config struct {
 
 	// Providers
 	CheckpointProvider string // "kubelet" or "mock"
-	TransferProvider   string // "file" (local/shared path) or "mock"
+	TransferProvider   string // "file", "registry", or "mock"
 
 	// Kubelet FCC Settings
 	KubeletPort   int
 	KubeletScheme string // "https" or "http"
 	CheckpointDir string // local output/transfer directory; mock default uses OS temp
+
+	// OCI registry settings used when TRANSFER_PROVIDER=registry.
+	RegistryRepository string
+	RegistryUsername   string
+	RegistryPassword   string
 
 	// Server Settings
 	ServerPort   string
@@ -62,8 +67,11 @@ func (c *Config) Validate() error {
 	if c.CheckpointProvider != "mock" && c.CheckpointProvider != "kubelet" {
 		return fmt.Errorf("unsupported CHECKPOINT_PROVIDER %q (use mock or kubelet)", c.CheckpointProvider)
 	}
-	if c.TransferProvider != "file" && c.TransferProvider != "mock" {
-		return fmt.Errorf("unsupported TRANSFER_PROVIDER %q (use file or mock)", c.TransferProvider)
+	if c.TransferProvider != "file" && c.TransferProvider != "registry" && c.TransferProvider != "mock" {
+		return fmt.Errorf("unsupported TRANSFER_PROVIDER %q (use file, registry, or mock)", c.TransferProvider)
+	}
+	if c.TransferProvider == "registry" && strings.TrimSpace(c.RegistryRepository) == "" {
+		return fmt.Errorf("TRANSFER_PROVIDER=registry requires CHECKPOINT_REGISTRY_REPOSITORY")
 	}
 	if c.MigrationMode == "mock" && c.CheckpointProvider != "mock" {
 		return fmt.Errorf("MIGRATION_MODE=mock requires CHECKPOINT_PROVIDER=mock")
@@ -110,6 +118,9 @@ func Load() *Config {
 		KubeletPort:        getIntEnv("KUBELET_PORT", 10250),
 		KubeletScheme:      getEnv("KUBELET_SCHEME", "https"),
 		CheckpointDir:      getEnv("CHECKPOINT_DIR", filepath.Join(os.TempDir(), "kairokube-checkpoints")),
+		RegistryRepository: getEnv("CHECKPOINT_REGISTRY_REPOSITORY", ""),
+		RegistryUsername:   getEnv("CHECKPOINT_REGISTRY_USERNAME", ""),
+		RegistryPassword:   getEnv("CHECKPOINT_REGISTRY_PASSWORD", ""),
 		ServerPort:         getEnv("SERVER_PORT", "8080"),
 		DebugLogging:       getBoolEnv("DEBUG_LOGGING", false),
 	}

@@ -41,7 +41,21 @@ spec:
         - name: CHECKPOINT_PROVIDER
           value: "kubelet"
         - name: TRANSFER_PROVIDER
-          value: "file"
+          value: "registry"
+        - name: CHECKPOINT_REGISTRY_REPOSITORY
+          value: "ds0uz5/kairokube"
+        - name: CHECKPOINT_REGISTRY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: checkpoint-registry-credentials
+              key: username
+              optional: true
+        - name: CHECKPOINT_REGISTRY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: checkpoint-registry-credentials
+              key: password
+              optional: true
         - name: MAX_REPLAY_TIME
           value: "5s"
         - name: MIN_CUTOFF_TIME

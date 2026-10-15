@@ -276,7 +276,6 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 		mgr.rollbackMgr.ExecuteRollback(ctx, mig, StateCheckpointing, fmt.Errorf("checkpoint creation failed: %w", err))
 		return err
 	}
-
 	mig.mu.Lock()
 	mig.CheckpointPath = ckptResult.FilePath
 	mig.CheckpointSize = ckptResult.SizeBytes
@@ -302,6 +301,15 @@ func (mgr *Manager) executeWorkflow(ctx context.Context, mig *Migration) error {
 	if err != nil {
 		mgr.rollbackMgr.ExecuteRollback(ctx, mig, StateTransferring, fmt.Errorf("transfer failed: %w", err))
 		return err
+	}
+	// The transfer provider may replace a local checkpoint path with a registry
+	// reference. Restore providers use that reference to pull the artifact on
+	// the target node.
+	if txResult.DestinationPath != "" {
+		ckptResult.FilePath = txResult.DestinationPath
+		mig.mu.Lock()
+		mig.CheckpointPath = txResult.DestinationPath
+		mig.mu.Unlock()
 	}
 
 	mig.mu.Lock()

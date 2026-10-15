@@ -5,8 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
+
+// CommandRunner executes an external runtime command and returns its output.
+// It is injected so restore logic can be tested without Docker or containerd.
+type CommandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
+
+// DefaultCommandRunner executes commands through the local operating system.
+var DefaultCommandRunner CommandRunner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	return cmd.CombinedOutput()
+}
 
 // ErrNodeRestoreUnavailable is returned when no node-side restorer is configured.
 var ErrNodeRestoreUnavailable = errors.New("node-side restorer is not configured; live restore is unavailable")

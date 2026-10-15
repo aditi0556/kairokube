@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -227,8 +228,14 @@ func (p *KubeletFCCProvider) RestoreCheckpoint(ctx context.Context, checkpoint *
 	if err := p.ValidateRestore(ctx, checkpoint, target); err != nil {
 		return err
 	}
-	if err := CheckPreflight(Preflight{ArchivePath: checkpoint.FilePath, CRIUPath: p.criuPath}); err != nil {
-		return err
+	// Registry-backed transfers intentionally replace the source-node path with
+	// an OCI reference. The Docker restorer performs the target-side pull and
+	// validates the extracted checkpoint directory, so the manager must not
+	// stat the source path or require CRIU inside its own container.
+	if !strings.HasPrefix(checkpoint.FilePath, "oci://") {
+		if err := CheckPreflight(Preflight{ArchivePath: checkpoint.FilePath, CRIUPath: p.criuPath}); err != nil {
+			return err
+		}
 	}
 	if _, err := p.restorer.RestoreArchive(ctx, checkpoint.FilePath, target.PodName); err != nil {
 		return fmt.Errorf("restore of %s on %s failed: %w", checkpoint.FilePath, target.NodeName, err)

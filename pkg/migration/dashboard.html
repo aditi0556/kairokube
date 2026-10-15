@@ -1603,7 +1603,7 @@ table.reg-table tbody tr:hover {
           <span>·</span>
           <span>VELOCITY: <b id="hudConduitVel">2.4 m/s</b></span>
           <span>·</span>
-          <span>INTEGRITY: <b id="hudChecksum">SHA-256 OK</b></span>
+          <span>INTEGRITY: <b id="hudChecksum">—</b></span>
         </div>
 
         <!-- 3D Projected Callout: Source Workload -->
@@ -1612,8 +1612,8 @@ table.reg-table tbody tr:hover {
             <span>SOURCE WORKLOAD</span>
             <span class="lvl-pct" id="srcVolPct">85%</span>
           </div>
-          <div class="callout-name" id="srcPodLabel">consumer-0</div>
-          <div class="callout-sub" id="srcNodeLabel">ns: default · origin</div>
+          <div class="callout-name" id="srcPodLabel">—</div>
+          <div class="callout-sub" id="srcNodeLabel">no active source</div>
           <div class="callout-bar"><i id="srcVolBar" style="width:85%"></i></div>
         </div>
 
@@ -1633,8 +1633,8 @@ table.reg-table tbody tr:hover {
             <span>TARGET NODE</span>
             <span class="lvl-pct" id="tgtVolPct">18%</span>
           </div>
-          <div class="callout-name" id="tgtPodLabel">consumer-0-target</div>
-          <div class="callout-sub" id="tgtNodeLabel">node: worker-2</div>
+          <div class="callout-name" id="tgtPodLabel">—</div>
+          <div class="callout-sub" id="tgtNodeLabel">no active target</div>
           <div class="callout-bar"><i id="tgtVolBar" style="width:18%"></i></div>
         </div>
       </div>
@@ -1711,10 +1711,10 @@ table.reg-table tbody tr:hover {
           <div class="active-route-box">
             <div class="active-route-head">
               <div class="route-path">
-                <span class="ns-badge" id="actNs">default</span>
-                <span id="actSource">consumer-0</span>
+                <span class="ns-badge" id="actNs">—</span>
+                <span id="actSource">—</span>
                 <svg class="arrow-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                <span id="actTarget">worker-2</span>
+                <span id="actTarget">—</span>
               </div>
               <span class="state-badge run" id="actStateBadge">IDLE</span>
             </div>
@@ -1825,8 +1825,8 @@ table.reg-table tbody tr:hover {
     </div>
     <div class="kpi-card">
       <div class="kpi-head"><span>Success Rate</span><span>SLA</span></div>
-      <div class="kpi-val" id="kpiSuccessRate">100.0%</div>
-      <div class="kpi-bar"><i id="kpiSuccessBar" style="width:100%"></i></div>
+      <div class="kpi-val" id="kpiSuccessRate">0.0%</div>
+      <div class="kpi-bar"><i id="kpiSuccessBar" style="width:0%"></i></div>
     </div>
     <div class="kpi-card">
       <div class="kpi-head"><span>RabbitMQ Queue Depth</span><span>BACKLOG</span></div>
@@ -1988,7 +1988,7 @@ table.reg-table tbody tr:hover {
     <div class="panel-header">
       <div class="panel-title">
         <span>Migration Snapshot Diagnostics</span>
-        <span class="status-pill mono" id="modalMigId" style="height:22px;">MIG-0001</span>
+        <span class="status-pill mono" id="modalMigId" style="height:22px;">—</span>
       </div>
       <div style="display:flex;gap:6px;">
         <button type="button" class="btn" id="copySnapshotBtn" style="height:24px;">Copy JSON</button>
@@ -3194,7 +3194,8 @@ table.reg-table tbody tr:hover {
    PART 2: KAIR0KUBE API CLIENT + BUILT-IN STANDALONE MS2M SIMULATOR
    ============================================================================
    Connects exclusively to the Go server endpoints (/migrations, /metrics,
-   /health). The console never fabricates migration state or telemetry.
+   /health, and /migrations/{id}). The console never fabricates migration
+   state or telemetry.
    ============================================================================ */
 var PHASES = [
   "PREPARING",
@@ -3620,7 +3621,7 @@ function renderKpisAndSidePanel(primaryMig, metrics) {
   var total = Number(metrics.migration_total || 0);
   var ok    = Number(metrics.migration_success_total || 0);
   var fail  = Number(metrics.migration_failure_total || 0);
-  var rate  = total > 0 ? (ok / total) * 100 : 100;
+  var rate  = total > 0 ? (ok / total) * 100 : 0;
   var q     = Number(metrics.queue_depth || 0);
   var ckpt  = Number(metrics.checkpoint_size_bytes || 0);
   var repl  = Number(metrics.messages_replayed_total || 0);
@@ -3650,10 +3651,10 @@ function renderKpisAndSidePanel(primaryMig, metrics) {
   var rho = mu > 0 ? (lam / mu) * 100 : 0;
 
   $("stageFlowRateLabel").textContent = "FLOW: " + lam.toFixed(1) + " / " + mu.toFixed(1) + " msg/s";
-  $("srcPodLabel").textContent = m ? m.source_pod : "consumer-0";
-  $("srcNodeLabel").textContent = "ns: " + (m ? (m.namespace || "default") : "default") + " · origin";
-  $("tgtPodLabel").textContent = m ? (m.target_pod || (m.source_pod + "-target")) : "consumer-0-target";
-  $("tgtNodeLabel").textContent = "node: " + (m ? m.target_node : "worker-2");
+  $("srcPodLabel").textContent = m ? m.source_pod : "—";
+  $("srcNodeLabel").textContent = m ? ("ns: " + (m.namespace || "default") + " · origin") : "no active source";
+  $("tgtPodLabel").textContent = m ? (m.target_pod || (m.source_pod + "-target")) : "—";
+  $("tgtNodeLabel").textContent = m ? ("node: " + m.target_node) : "no active target";
   $("midVelocityLabel").textContent = lam.toFixed(1) + " msg/s";
   $("midCutoffLabel").textContent = "cutoff τ: " + (m ? fmtNsToSec(m.calculated_cutoff) : "–") + " · Q: " + q + " msgs";
 
@@ -3665,11 +3666,11 @@ function renderKpisAndSidePanel(primaryMig, metrics) {
   $("durDowntime").textContent = m ? fmtNsToSec(m.downtime) : "–";
 
   // Proportional Waterfall Breakdown Bar
-  var dCp = m && m.checkpoint_duration ? Number(m.checkpoint_duration) : 1350000000;
-  var dTx = m && m.transfer_duration   ? Number(m.transfer_duration)   : 1850000000;
-  var dRs = m && m.restore_duration    ? Number(m.restore_duration)    : 1120000000;
-  var dRp = m && m.replay_duration     ? Number(m.replay_duration)     : 2150000000;
-  var dDt = m && m.downtime            ? Number(m.downtime)            : 350000000;
+  var dCp = m ? Number(m.checkpoint_duration || 0) : 0;
+  var dTx = m ? Number(m.transfer_duration || 0) : 0;
+  var dRs = m ? Number(m.restore_duration || 0) : 0;
+  var dRp = m ? Number(m.replay_duration || 0) : 0;
+  var dDt = m ? Number(m.downtime || 0) : 0;
   var dSum = Math.max(1, dCp + dTx + dRs + dRp + dDt);
   $("wfSegCp").style.width = ((dCp / dSum) * 100).toFixed(1) + "%";
   $("wfSegTx").style.width = ((dTx / dSum) * 100).toFixed(1) + "%";
@@ -3677,12 +3678,12 @@ function renderKpisAndSidePanel(primaryMig, metrics) {
   $("wfSegRp").style.width = ((dRp / dSum) * 100).toFixed(1) + "%";
   $("wfSegDt").style.width = ((dDt / dSum) * 100).toFixed(1) + "%";
   $("wfTotalDurationLabel").textContent = "TOTAL HANDOFF: " + (dSum / 1e9).toFixed(2) + "s";
-  $("hudChecksum").textContent = (st === "FAILED" || st === "ROLLING_BACK") ? "ABORTED" : "SHA-256 OK";
+  $("hudChecksum").textContent = !m ? "—" : ((st === "FAILED" || st === "ROLLING_BACK") ? "ABORTED" : "SHA-256 OK");
 
   // Right Active Panel
-  $("actNs").textContent = m ? (m.namespace || "default") : "default";
-  $("actSource").textContent = m ? m.source_pod : "consumer-0";
-  $("actTarget").textContent = m ? m.target_node : "worker-2";
+  $("actNs").textContent = m ? (m.namespace || "default") : "—";
+  $("actSource").textContent = m ? m.source_pod : "—";
+  $("actTarget").textContent = m ? m.target_node : "—";
   $("actMigId").textContent = m ? m.migration_id : "—";
   $("actCkptSize").textContent = m && m.checkpoint_size_bytes ? fmtBytes(m.checkpoint_size_bytes) : "—";
 
@@ -3705,7 +3706,7 @@ function renderKpisAndSidePanel(primaryMig, metrics) {
   $("ms2mLambda").textContent = lam.toFixed(2) + " msg/s";
   $("ms2mMu").textContent = mu.toFixed(2) + " msg/s";
   $("ms2mRho").textContent = rho.toFixed(1) + "%";
-  $("ms2mFeasibility").textContent = rho < 95 ? "FEASIBLE (λ < μ)" : "SATURATED (WARN)";
+  $("ms2mFeasibility").textContent = !m && !lam && !mu ? "NO TELEMETRY" : (rho < 95 ? "FEASIBLE (λ < μ)" : "SATURATED (WARN)");
   $("ms2mCutoff").textContent = m ? fmtNsToSec(m.calculated_cutoff) : "–";
   $("ms2mReplayedSub").textContent = (m ? (m.messages_replayed || 0) : 0) + " messages replayed";
 }
@@ -3760,20 +3761,26 @@ async function syncTelemetry() {
   syncSvg.style.transform = "rotate(180deg)";
   setTimeout(function () { syncSvg.style.transform = "none"; }, 250);
 
-  var list = [];
-  var promText = "";
+  var list = migrationsCache.slice();
+  var promText = $("promOutput").textContent || "";
 
   try {
-    var res = await Promise.all([fetch("/migrations", { cache: "no-store" }), fetch("/metrics", { cache: "no-store" })]);
-    if (!res[0].ok || !res[1].ok) throw new Error("HTTP endpoint non-200");
+    var res = await Promise.all([
+      fetch("/migrations", { cache: "no-store" }),
+      fetch("/metrics", { cache: "no-store" }),
+      fetch("/health", { cache: "no-store" })
+    ]);
+    if (!res[0].ok || !res[1].ok || !res[2].ok) throw new Error("HTTP endpoint non-200");
     list = await res[0].json();
     promText = await res[1].text();
+    var health = await res[2].json();
+    if (!health || health.status !== "healthy") throw new Error("health check failed");
     $("connPill").className = "status-pill";
-    $("connText").textContent = "API CONNECTED";
+    $("connText").textContent = "API CONNECTED · HEALTHY";
   } catch (e) {
     $("connPill").className = "status-pill sim";
     $("connText").textContent = "API OFFLINE";
-    appendLog("ERROR", "Migration-manager API unavailable; live telemetry paused.", "err");
+    appendLog("ERROR", "Migration-manager API unavailable; showing the last live snapshot.", "err");
   }
 
   migrationsCache = list || [];
@@ -3838,9 +3845,21 @@ async function cancelMigrationRequest(migId) {
 }
 
 /* ---------- Inspector Modal ---------- */
-function openDiagnosticsModal(id) {
-  var m = migrationsCache.find(function (item) { return item.migration_id === id; });
-  if (!m) return;
+async function openDiagnosticsModal(id) {
+  var m = null;
+  try {
+    var res = await fetch("/migrations/" + encodeURIComponent(id), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    m = await res.json();
+  } catch (err) {
+    m = migrationsCache.find(function (item) { return item.migration_id === id; });
+    if (!m) {
+      showToast("Unable to load migration details", "err");
+      appendLog("ERROR", "GET /migrations/" + id + " failed: " + err.message, "err");
+      return;
+    }
+    appendLog("WARN", "Using the last list snapshot for " + id + "; detail endpoint unavailable.", "warn");
+  }
   $("modalMigId").textContent = m.migration_id;
   $("mPod").textContent = m.source_pod || "–";
   $("mNs").textContent = m.namespace || "default";

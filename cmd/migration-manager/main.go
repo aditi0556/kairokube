@@ -60,7 +60,7 @@ func main() {
 		})
 		// Wire production node restorer with CRIU support
 		criuPath := getEnv("CRIU_PATH", "/usr/sbin/criu")
-		restorer := checkpoint.NewPodmanRestorer(nil)
+		restorer := checkpoint.NewDockerRestorer(nil).WithRegistryCredentials(cfg.RegistryUsername, cfg.RegistryPassword)
 		cp = kcp.WithRestorer(restorer, criuPath)
 	} else if cfg.CheckpointProvider == "mock" {
 		log.Printf("Configuring MOCK checkpoint provider in directory %s; this is simulated state, not a process checkpoint", cfg.CheckpointDir)
@@ -73,6 +73,9 @@ func main() {
 	var tp transfer.TransferProvider
 	if cfg.TransferProvider == "mock" {
 		tp = &transfer.MockTransferProvider{}
+	} else if cfg.TransferProvider == "registry" {
+		log.Printf("Configuring OCI registry checkpoint transfer: %s", cfg.RegistryRepository)
+		tp = transfer.NewRegistryTransferProvider(cfg.RegistryRepository, nil).WithCredentials(cfg.RegistryUsername, cfg.RegistryPassword)
 	} else {
 		tp = transfer.NewFileTransferProvider(cfg.CheckpointDir)
 	}
