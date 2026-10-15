@@ -35,6 +35,10 @@ func NewServer(mgr *Manager, addr string) *Server {
 	return s
 }
 
+// dashboardAssetsPrefix is the path prefix that serves the vendored browser
+// dependencies the console loads, currently the embedded Three.js module build.
+const dashboardAssetsPrefix = "/dashboard-assets/"
+
 // registerRoutes binds every HTTP path served by the manager to its handler.
 // Paths are registered once in NewServer; the mux is not modified afterwards.
 func (s *Server) registerRoutes() {
@@ -43,6 +47,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/dashboard", s.handleDashboard)
+	s.mux.HandleFunc(dashboardAssetsPrefix, s.handleDashboardAssetPath)
 }
 
 // handleCancel serves POST /migrations/{id}/cancel. It requests cancellation of a
@@ -67,6 +72,12 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request, id string)
 	_ = json.NewEncoder(w).Encode(map[string]string{"migration_id": id, "status": "cancel_requested"})
 }
 
+// handleDashboardAssetPath serves vendored dashboard dependencies such as the
+// embedded Three.js module. Unknown files under the prefix return 404.
+func (s *Server) handleDashboardAssetPath(w http.ResponseWriter, r *http.Request) {
+	s.handleDashboardAsset(w, r, dashboardAssetPath(r.URL.Path))
+}
+
 // handleDashboard serves the control console page. Only GET is allowed.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -74,7 +85,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+	// 'self' allows the vendored Three.js module served from this same origin;
+	// 'unsafe-inline' keeps the page a single self-contained file. No remote
+	// origin is permitted, so the console still renders on a private network.
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(dashboardHTML)
 }

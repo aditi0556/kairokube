@@ -3,183 +3,1965 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KairoKube Control Console</title>
+<title>KairoKube · Kubernetes Stateful Live Migration</title>
+<meta name="description" content="KairoKube orchestrates message-based stateful microservice migration with Kubernetes container checkpointing.">
+<script type="importmap">
+{ "imports": { "three": "/dashboard-assets/three.module.min.js" } }
+</script>
 <style>
-  :root {
-    --blue-900: #0a1a3a; --blue-700: #103a80; --blue-500: #1f6fe0;
-    --blue-300: #7fb3ff; --ink: #e8f1ff; --danger: #ff5c7a; --ok: #3ee39a;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
-  body {
-    font-family: system-ui, "Segoe UI", sans-serif; color: var(--ink);
-    background: radial-gradient(1200px 700px at 20% -10%, #1a4fa8 0%, transparent 60%),
-                radial-gradient(900px 600px at 110% 110%, #0c2d66 0%, transparent 55%),
-                linear-gradient(160deg, #06132e 0%, #0a1a3a 100%);
-    overflow-x: hidden;
-  }
-  .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
-  .stars span {
-    position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #9cc6ff;
-    opacity: .6; animation: twinkle 3s ease-in-out infinite;
-  }
-  @keyframes twinkle { 0%,100% { opacity: .15; } 50% { opacity: .9; } }
+/* ============================================================
+   1. DESIGN TOKENS
+   ============================================================ */
+:root {
+  --bg: #030817;
+  --panel: rgba(9, 20, 48, 0.72);
+  --panel-2: rgba(13, 28, 66, 0.6);
+  --line: rgba(125, 185, 255, 0.16);
+  --line-bright: rgba(140, 205, 255, 0.4);
 
-  main { position: relative; z-index: 1; padding: 1.5rem; max-width: 1300px; margin: 0 auto; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  h1 {
-    margin: 0; font-size: 1.8rem; letter-spacing: .04em;
-    background: linear-gradient(90deg, #ffffff, #7fb3ff 60%, #1f6fe0);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 30px rgba(31,111,224,.5);
-    animation: shimmer 6s linear infinite; background-size: 200% auto;
-  }
-  @keyframes shimmer { to { background-position: 200% center; } }
-  .pill {
-    padding: .35rem .8rem; border-radius: 999px; font-size: .85rem;
-    background: rgba(31,111,224,.2); border: 1px solid rgba(127,179,255,.4);
-  }
-  .pill.live::before {
-    content: ""; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%;
-    background: var(--ok); margin-right: .45rem; box-shadow: 0 0 10px var(--ok);
-    animation: pulse 1.6s ease-out infinite;
-  }
-  .pill.error { border-color: var(--danger); color: #ffd6de; }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(62,227,154,.7); } 100% { box-shadow: 0 0 0 12px rgba(62,227,154,0); } }
+  --ink: #f3f8ff;
+  --ink-2: #c4d7f6;
+  --muted: #8eaadb;
 
-  .banner {
-    margin: 1rem 0; padding: .7rem 1rem; border-radius: 12px;
-    background: rgba(255,92,122,.12); border: 1px solid rgba(255,92,122,.45); font-size: .9rem;
-  }
+  --cyan: #22d3ee;
+  --azure: #3b82f6;
+  --emerald: #10b981;
+  --amber: #f59e0b;
+  --rose: #f43f5e;
+  --violet: #a855f7;
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1.1rem; margin: 1.2rem 0 1.6rem; perspective: 1200px; }
-  .card {
-    position: relative; padding: 1rem 1.1rem; border-radius: 16px;
-    background: linear-gradient(145deg, rgba(31,111,224,.35), rgba(16,58,128,.5));
-    border: 1px solid rgba(127,179,255,.35);
-    box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.15);
-    transform-style: preserve-3d; transition: transform .35s ease, box-shadow .35s ease;
-    animation: floaty 7s ease-in-out infinite;
-  }
-  .card:nth-child(2n) { animation-delay: -2s; }
-  .card:nth-child(3n) { animation-delay: -4s; }
-  .card:hover { transform: rotateX(8deg) rotateY(-10deg) translateZ(18px); box-shadow: 0 30px 60px rgba(31,111,224,.45); }
-  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-  .card .label { font-size: .78rem; color: var(--blue-300); text-transform: uppercase; letter-spacing: .08em; }
-  .card .value { font-size: 1.9rem; font-weight: 700; margin-top: .25rem; text-shadow: 0 0 18px rgba(127,179,255,.6); }
-  .card .bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.12); margin-top: .6rem; overflow: hidden; }
+  --radius: 20px;
+  --radius-sm: 12px;
+  --nav-h: 68px;
+  --shadow: 0 24px 60px rgba(2, 6, 20, 0.5);
+  --shadow-lg: 0 40px 90px rgba(2, 6, 20, 0.6);
 
-  .panel {
-    margin: 1.4rem 0; padding: 1.1rem; border-radius: 18px;
-    background: rgba(10,26,58,.7); border: 1px solid rgba(127,179,255,.3);
-    box-shadow: 0 24px 50px rgba(0,0,0,.4); backdrop-filter: blur(6px);
-  }
-  .panel h2 { margin: 0 0 .8rem; font-size: 1.05rem; color: var(--blue-300); letter-spacing: .05em; }
-  form.controls { display: flex; flex-wrap: wrap; gap: .7rem; align-items: flex-end; }
-  label { display: flex; flex-direction: column; font-size: .75rem; color: var(--blue-300); gap: .3rem; }
-  input {
-    padding: .55rem .7rem; border-radius: 10px; min-width: 11rem;
-    background: rgba(6,19,46,.8); border: 1px solid rgba(127,179,255,.35); color: var(--ink); font-size: .9rem;
-    transition: box-shadow .25s, border-color .25s;
-  }
-  input:focus { outline: none; border-color: var(--blue-300); box-shadow: 0 0 0 3px rgba(31,111,224,.35); }
-  button {
-    position: relative; padding: .6rem 1.1rem; border-radius: 12px; border: none; cursor: pointer;
-    color: #fff; font-weight: 600; font-size: .9rem; letter-spacing: .03em;
-    background: linear-gradient(180deg, #3d8bff, #1f6fe0);
-    box-shadow: 0 6px 0 #0d3e8f, 0 12px 24px rgba(31,111,224,.4);
-    transition: transform .12s ease, box-shadow .12s ease;
-  }
-  button:hover { transform: translateY(-2px); }
-  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #0d3e8f; }
-  button.danger { background: linear-gradient(180deg, #ff7a92, #d9304f); box-shadow: 0 6px 0 #8f1a2d, 0 12px 24px rgba(255,92,122,.35); }
-  button.small { padding: .35rem .7rem; font-size: .78rem; border-radius: 8px; box-shadow: 0 3px 0 #0d3e8f; }
-  button.small.danger { box-shadow: 0 3px 0 #8f1a2d; }
-  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-  .flash { font-size: .85rem; min-height: 1.2rem; margin-top: .6rem; color: var(--blue-300); }
-  .flash.err { color: #ffb3c1; }
+  --font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  .table-wrap { overflow-x: auto; border-radius: 14px; border: 1px solid rgba(127,179,255,.25); }
-  table { width: 100%; border-collapse: collapse; font-size: .88rem; background: rgba(6,19,46,.6); }
-  th, td { padding: .6rem .7rem; text-align: left; border-bottom: 1px solid rgba(127,179,255,.15); white-space: nowrap; }
-  th { color: var(--blue-300); font-weight: 600; background: rgba(16,58,128,.5); }
-  tbody tr { transition: background .25s, transform .25s; }
-  tbody tr:hover { background: rgba(31,111,224,.18); transform: translateX(4px); }
-  .state { padding: .2rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: rgba(127,179,255,.2); }
-  .state.run { background: rgba(31,111,224,.5); animation: glow 1.4s ease-in-out infinite; }
-  .state.ok { background: rgba(62,227,154,.25); color: #b9f5da; }
-  .state.bad { background: rgba(255,92,122,.3); color: #ffd3dc; }
-  @keyframes glow { 0%,100% { box-shadow: 0 0 0 rgba(31,111,224,0); } 50% { box-shadow: 0 0 14px rgba(31,111,224,.9); } }
-  .muted { color: #8fb4e8; }
+/* ============================================================
+   2. RESET + PAGE SHELL
+   ============================================================ */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 16px); }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font: 15px/1.6 var(--font);
+  color: var(--ink);
+  background: #0075FF;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: rgba(34, 211, 238, 0.35); }
 
-  .prog { width: 110px; height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; position: relative; }
-  .prog > i { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: linear-gradient(90deg, var(--blue-300), var(--blue-500)); transition: width .6s ease; }
-  .prog.running > i::after {
-    content: ""; position: absolute; top: 0; bottom: 0; left: 0; right: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
-    animation: shine 1.2s linear infinite;
-  }
-  @keyframes shine { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+#cloudSkyCanvas {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none; display: block;
+}
+.sky-scrim {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3, 10, 28, 0.62) 0%, rgba(3, 10, 28, 0.3) 22%, rgba(3, 10, 28, 0.55) 65%, rgba(3, 10, 28, 0.82) 100%),
+    radial-gradient(1200px 800px at 78% 18%, rgba(2, 8, 24, 0.28), transparent 70%);
+}
+.page { position: relative; z-index: 2; }
 
-  footer { margin: 2rem 0 .5rem; font-size: .8rem; color: #7fa6d9; text-align: center; }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 6px; }
+
+/* ============================================================
+   3. NAVIGATION
+   ============================================================ */
+.site-nav {
+  position: sticky; top: 0; z-index: 50; height: var(--nav-h);
+  display: flex; align-items: center; gap: 1.2rem;
+  padding: 0 clamp(1rem, 3vw, 2.2rem);
+  border-bottom: 1px solid rgba(125, 185, 255, 0.14);
+  background: rgba(5, 13, 34, 0.62);
+  backdrop-filter: blur(18px) saturate(1.3);
+  transition: background 0.35s var(--ease), border-color 0.35s var(--ease);
+}
+.site-nav.scrolled {
+  background: rgba(4, 11, 30, 0.88);
+  border-bottom-color: rgba(125, 185, 255, 0.28);
+  box-shadow: 0 12px 34px rgba(2, 6, 20, 0.45);
+}
+.brand { display: flex; align-items: center; gap: 0.7rem; flex-shrink: 0; }
+.logo-wrap { position: relative; width: 38px; height: 38px; }
+.logo {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  font-weight: 900; font-size: 1.15rem; color: #fff;
+  background: linear-gradient(135deg, #38bdf8, #2563eb 55%, #1e3a8a);
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.logo-ring {
+  position: absolute; inset: -4px; border-radius: 15px;
+  border: 1px dashed rgba(56, 189, 248, 0.45); animation: spin 16s linear infinite;
+}
+.wordmark { display: flex; flex-direction: column; line-height: 1.15; }
+.wordmark b { font-size: 1.02rem; letter-spacing: 0.02em; }
+.wordmark span { font-size: 0.62rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); }
+
+.nav-links { display: flex; align-items: center; gap: 0.15rem; margin-left: 0.6rem; }
+.nav-links a {
+  position: relative; padding: 0.45rem 0.7rem; border-radius: 9px;
+  font-size: 0.85rem; font-weight: 600; color: var(--ink-2);
+  transition: color 0.2s, background 0.2s;
+}
+.nav-links a::after {
+  content: ""; position: absolute; left: 0.7rem; right: 0.7rem; bottom: 0.22rem; height: 2px;
+  border-radius: 2px; background: var(--cyan); transform: scaleX(0); transform-origin: left;
+  transition: transform 0.3s var(--ease);
+}
+.nav-links a:hover { color: #fff; background: rgba(56, 189, 248, 0.12); }
+.nav-links a.active { color: #fff; }
+.nav-links a.active::after { transform: scaleX(1); }
+
+.nav-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.55rem 1.05rem;
+  border-radius: 11px; font-size: 0.85rem; font-weight: 700; color: #fff; white-space: nowrap;
+  background: linear-gradient(180deg, #38bdf8, #2563eb);
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border: none; cursor: pointer; font-family: inherit;
+  transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease), filter 0.2s;
+}
+.btn-primary:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 14px 30px rgba(37, 99, 235, 0.55); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary.ghost {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--line-bright);
+  box-shadow: none; color: var(--ink);
+}
+.btn-primary.ghost:hover { background: rgba(56, 189, 248, 0.2); }
+.btn-primary.ghost:hover { filter: none; }
+
+.pill {
+  padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.74rem; font-family: var(--mono);
+  background: rgba(12, 30, 74, 0.7); border: 1px solid var(--line);
+  display: inline-flex; align-items: center; gap: 0.45rem; white-space: nowrap;
+}
+.dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 10px var(--emerald); flex-shrink: 0; }
+.dot.pulse { animation: ping 1.9s var(--ease) infinite; }
+.pill.offline { border-color: rgba(244, 63, 94, 0.6); }
+.pill.offline .dot { background: var(--rose); box-shadow: 0 0 10px var(--rose); }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 100% { box-shadow: 0 0 0 11px rgba(16, 185, 129, 0); } }
+
+.nav-toggle {
+  display: none; width: 38px; height: 38px; border-radius: 10px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); color: var(--ink);
+  font-size: 1.1rem; line-height: 1;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
+<style>
+/* ============================================================
+   4. BUTTONS / FORM CONTROLS
+   ============================================================ */
+.btn-hud {
+  padding: 0.4rem 0.7rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600;
+  font-family: var(--mono); background: rgba(14, 34, 82, 0.7);
+  border: 1px solid var(--line); color: var(--ink-2); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s var(--ease);
+}
+.btn-hud:hover { background: rgba(37, 99, 235, 0.4); border-color: var(--cyan); color: #fff; transform: translateY(-1px); }
+.hud-select {
+  background: rgba(14, 34, 82, 0.7); border: 1px solid var(--line); color: var(--ink-2);
+  padding: 0.38rem 0.55rem; border-radius: 10px; font-size: 0.74rem; font-family: var(--mono);
+  outline: none; cursor: pointer; max-width: 11rem;
+}
+.hud-select:hover { border-color: var(--cyan); }
+
+button { font-family: inherit; }
+.btn-solid {
+  position: relative; overflow: hidden; padding: 0.8rem 1.4rem; border: none; border-radius: 13px;
+  cursor: pointer; color: #fff; font-weight: 700; font-size: 0.95rem; letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #38bdf8, #2563eb);
+  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: transform 0.16s var(--ease), box-shadow 0.2s, filter 0.2s;
+}
+.btn-solid:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 16px 34px rgba(37, 99, 235, 0.55); }
+.btn-solid:active { transform: translateY(1px); }
+.btn-solid::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 45%; left: -60%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: skewX(-20deg); transition: left 0.6s var(--ease);
+}
+.btn-solid:hover::after { left: 130%; }
+.btn-solid:disabled { opacity: 0.5; cursor: not-allowed; transform: none; filter: none; }
+.btn-solid.loading { color: transparent; }
+.btn-solid.loading::before {
+  content: ""; position: absolute; width: 17px; height: 17px; left: 50%; top: 50%; margin: -8px 0 0 -8px;
+  border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+.btn-danger {
+  background: linear-gradient(180deg, #fb7185, #dc2626);
+  box-shadow: 0 10px 26px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-mini {
+  padding: 0.36rem 0.72rem; border-radius: 9px; font-size: 0.75rem; font-weight: 700;
+  cursor: pointer; border: 1px solid var(--line); color: var(--ink);
+  background: rgba(255, 255, 255, 0.09);
+  transition: background 0.2s, border-color 0.2s, transform 0.18s var(--ease);
+}
+.btn-mini:hover { background: rgba(56, 189, 248, 0.24); border-color: var(--cyan); transform: translateY(-1px); }
+.btn-mini.danger { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.5); color: #fecdd3; }
+.btn-mini.danger:hover { background: rgba(239, 68, 68, 0.38); border-color: #f87171; }
+.btn-mini:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+label { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.71rem; color: var(--ink-2); letter-spacing: 0.09em; text-transform: uppercase; font-weight: 700; }
+input {
+  padding: 0.72rem 0.9rem; border-radius: 12px; background: rgba(4, 12, 34, 0.85);
+  border: 1px solid rgba(125, 185, 255, 0.28); color: var(--ink); font: inherit; font-size: 0.92rem;
+  font-family: var(--mono); transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s var(--ease);
+  width: 100%;
+}
+input::placeholder { color: rgba(142, 170, 219, 0.5); text-transform: none; }
+input:focus {
+  outline: none; border-color: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2), 0 0 18px rgba(6, 182, 212, 0.25);
+  transform: translateY(-1px);
+}
+
+/* ============================================================
+   5. HERO + WEBGL STAGE
+   ============================================================ */
+.hero {
+  position: relative; overflow: hidden;
+  padding: clamp(2.2rem, 5vw, 4.2rem) clamp(1rem, 3vw, 2.2rem) clamp(1.6rem, 3vw, 2.4rem);
+  border-bottom: 1px solid rgba(125, 185, 255, 0.14);
+}
+.hero::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(102deg, rgba(3, 10, 28, 0.93) 0%, rgba(3, 10, 28, 0.78) 34%, rgba(3, 10, 28, 0.2) 58%, rgba(3, 10, 28, 0.05) 78%, transparent 100%);
+}
+.hero-inner {
+  position: relative; z-index: 3; max-width: 1400px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr); gap: clamp(1.5rem, 3vw, 3rem);
+  align-items: center; min-height: min(76vh, 660px);
+}
+#stageCanvas {
+  position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; display: block;
+}
+.hero-copy { max-width: 640px; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.3rem 0.75rem;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--cyan);
+  background: rgba(34, 211, 238, 0.12); border: 1px solid rgba(34, 211, 238, 0.35);
+}
+.eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); animation: pulseDot 2s infinite; }
+@keyframes pulseDot { 0%, 100% { opacity: 0.35; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.25); } }
+
+.hero h1 {
+  margin: 1rem 0 0; font-size: clamp(2.1rem, 4.4vw, 3.4rem); line-height: 1.06;
+  font-weight: 800; letter-spacing: -0.025em;
+}
+.hero h1 .grad {
+  background: linear-gradient(100deg, #ffffff 0%, #67e8f9 42%, #93c5fd 70%, #ffffff 100%);
+  background-size: 220% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: shimmer 9s linear infinite;
+}
+@keyframes shimmer { to { background-position: 220% center; } }
+.hero-lede { margin: 1.1rem 0 0; font-size: 1.05rem; color: var(--ink-2); max-width: 56ch; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 1.6rem; }
+
+.hero-stats {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem;
+  margin-top: 2rem; padding-top: 1.4rem; border-top: 1px solid var(--line); max-width: 540px;
+}
+.hero-stat b { display: block; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hero-stat span { font-size: 0.71rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* Stage HUD overlay */
+.stage-hud {
+  position: absolute; z-index: 4; top: clamp(1rem, 3vw, 2rem); left: clamp(1rem, 3vw, 2rem);
+  display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; pointer-events: none;
+}
+.stage-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.7rem; border-radius: 999px;
+  font-family: var(--mono); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--cyan); background: rgba(6, 18, 46, 0.7); border: 1px solid rgba(34, 211, 238, 0.35);
+  backdrop-filter: blur(8px);
+}
+.stage-note { font-family: var(--mono); font-size: 0.68rem; color: var(--ink-2); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7); }
+
+.stage-legend {
+  position: absolute; z-index: 4; right: clamp(1rem, 3vw, 2rem); top: clamp(1rem, 3vw, 2rem);
+  display: grid; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: 14px;
+  background: rgba(6, 16, 42, 0.62); border: 1px solid var(--line); backdrop-filter: blur(10px);
+  font-family: var(--mono); font-size: 0.68rem; color: var(--ink-2); pointer-events: none;
+}
+.stage-legend span { display: flex; align-items: center; gap: 0.45rem; }
+.stage-legend i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+
+.stage-guides { position: relative; z-index: 3; grid-column: 1 / -1; }
+/* Empty grid cell that defines where the 3D topology is centred (see layout()). */
+.stage-anchor { min-height: clamp(280px, 52vh, 520px); pointer-events: none; }
+
+/* hero flight panel */
+.flight {
+  margin-top: 1.6rem; padding: 1rem 1.1rem; border-radius: 16px; display: none;
+  background: rgba(6, 16, 44, 0.72); border: 1px solid rgba(56, 189, 248, 0.35);
+  backdrop-filter: blur(14px); box-shadow: 0 18px 40px rgba(2, 6, 20, 0.4);
+}
+.flight.show { display: block; animation: rise 0.45s var(--ease) both; }
+.flight-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
+.flight-route { font-family: var(--mono); font-size: 0.98rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.55rem; }
+.flight-route .arr { color: var(--cyan); }
+.flight-meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; font-family: var(--mono); font-size: 0.74rem; color: var(--ink-2); margin-top: 0.6rem; }
+.flight-meta strong { color: #fff; }
+
+/* lifecycle stepper */
+.flow-wrap { margin-top: 1.6rem; }
+.flow-title { font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 0.55rem; }
+.flow { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.step {
+  padding: 0.3rem 0.6rem; border-radius: 8px; font-size: 0.68rem; font-weight: 600;
+  font-family: var(--mono); background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12); color: var(--muted);
+  transition: background 0.35s var(--ease), color 0.35s, border-color 0.35s, box-shadow 0.35s;
+}
+.step.done { color: #a7f3d0; background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); }
+.step.now { color: #fff; background: linear-gradient(135deg, #1d4ed8, #0284c7); border-color: var(--cyan); box-shadow: 0 0 18px rgba(6, 182, 212, 0.7); animation: beat 1.4s ease-in-out infinite; }
+.step.fail { color: #fecdd3; background: rgba(239, 68, 68, 0.26); border-color: rgba(239, 68, 68, 0.6); }
+.arrow { color: rgba(125, 185, 255, 0.4); font-size: 0.8rem; }
+@keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+/* success ring inside hero stats */
+.ring-cell { align-items: flex-start; }
+.ring { position: relative; width: 96px; height: 96px; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle.track { stroke: rgba(255, 255, 255, 0.13); }
+.ring circle.val {
+  stroke: #22d3ee; filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.85));
+  transition: stroke-dashoffset 1.2s var(--ease);
+}
+.ring .num {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #fff;
+}
+.ring .num small { display: block; font-size: 0.56rem; color: var(--muted); font-weight: 700; letter-spacing: 0.12em; }
+.ring-total { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+
+.quick-row { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin-top: 1.1rem; }
+.quick-label { font-size: 0.68rem; letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.quick-chip {
+  padding: 0.28rem 0.68rem; border-radius: 999px; font-size: 0.74rem; font-family: var(--mono);
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(125, 185, 255, 0.28);
+  color: var(--ink-2); cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s var(--ease);
+}
+.quick-chip:hover { background: rgba(56, 189, 248, 0.3); border-color: var(--cyan); color: #fff; transform: translateY(-1px); }
+</style>
+<style>
+/* ============================================================
+   6. LIVE TICKER STRIP
+   ============================================================ */
+.ticker {
+  border-bottom: 1px solid rgba(125, 185, 255, 0.14);
+  background: rgba(4, 12, 32, 0.66); backdrop-filter: blur(14px); overflow: hidden;
+}
+.ticker-track { display: flex; gap: 2.4rem; padding: 0.55rem 1.2rem; white-space: nowrap; }
+.ticker-item { display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--mono); font-size: 0.74rem; color: var(--ink-2); }
+.ticker-item b { color: #fff; font-weight: 700; }
+.ticker-item::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+
+/* ============================================================
+   7. SECTION SHELL
+   ============================================================ */
+.section { max-width: 1400px; margin: 0 auto; padding: clamp(2.6rem, 6vw, 4.6rem) clamp(1rem, 3vw, 2.2rem) 0; }
+.section-head { max-width: 720px; margin-bottom: 1.8rem; }
+.section-head h2 {
+  margin: 0.7rem 0 0.5rem; font-size: clamp(1.5rem, 2.6vw, 2.05rem); font-weight: 800;
+  letter-spacing: -0.02em; line-height: 1.15;
+}
+.section-head p { margin: 0; color: var(--ink-2); font-size: 0.98rem; }
+
+/* ============================================================
+   8. GLASS PANEL / CARDS
+   ============================================================ */
+.panel {
+  padding: clamp(1.2rem, 2.4vw, 1.6rem); border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.panel h3 { margin: 0; font-size: 0.86rem; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-2); font-weight: 700; display: flex; align-items: center; gap: 0.55rem; }
+.panel h3::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--azure); box-shadow: 0 0 10px var(--azure); }
+.tag { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 1rem; }
+.card {
+  position: relative; overflow: hidden; padding: 1.15rem 1.25rem; border-radius: var(--radius);
+  background: linear-gradient(155deg, rgba(18, 42, 100, 0.72) 0%, rgba(8, 20, 52, 0.82) 100%);
+  border: 1px solid var(--line); backdrop-filter: blur(16px);
+  box-shadow: 0 16px 38px rgba(2, 6, 20, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform 0.4s var(--ease), box-shadow 0.4s var(--ease), border-color 0.3s;
+}
+.card:hover { transform: translateY(-5px); border-color: var(--line-bright); box-shadow: 0 26px 54px rgba(37, 99, 235, 0.32); }
+.card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(260px 130px at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.14), transparent 62%);
+  transition: opacity 0.3s;
+}
+.card:hover::before { opacity: 1; }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.card .label { font-size: 0.69rem; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.11em; font-weight: 700; }
+.card .card-icon { font-size: 0.95rem; opacity: 0.85; }
+.card .value {
+  font-size: 1.85rem; font-weight: 800; margin-top: 0.3rem; font-variant-numeric: tabular-nums;
+  font-family: var(--mono); color: #fff; text-shadow: 0 0 20px rgba(125, 185, 255, 0.4);
+}
+.card .subtext { font-size: 0.72rem; color: var(--ink-2); margin-top: 0.15rem; }
+.card .meter { height: 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); margin-top: 0.8rem; overflow: hidden; }
+.card .meter > i {
+  display: block; height: 100%; width: 0; border-radius: 4px;
+  background: linear-gradient(90deg, var(--cyan), var(--azure));
+  box-shadow: 0 0 12px var(--cyan); transition: width 1s var(--ease);
+}
+
+/* ============================================================
+   9. CHARTS
+   ============================================================ */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+.chart-title { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-2); font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+.chart-title::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.chart-curr { font-family: var(--mono); font-size: 0.84rem; font-weight: 700; color: #fff; }
+.sparkline-svg { width: 100%; height: 84px; overflow: visible; display: block; }
+.sparkline-path { fill: none; stroke: var(--cyan); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.55)); }
+.sparkline-area { fill: url(#sparkGrad); }
+.sparkline-subpath { fill: none; stroke: var(--violet); stroke-width: 1.8; stroke-dasharray: 4 3; opacity: 0.9; }
+.chart-keys { display: flex; gap: 1rem; margin-top: 0.7rem; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+.chart-keys span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.chart-keys i { width: 14px; height: 2px; border-radius: 2px; background: currentColor; }
+
+/* ============================================================
+   10. PIPELINE PHASE CARDS
+   ============================================================ */
+.phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); gap: 1rem; }
+.phase-card {
+  position: relative; overflow: hidden; padding: 1.3rem 1.35rem 1.15rem; border-radius: var(--radius);
+  background: linear-gradient(160deg, rgba(18, 42, 100, 0.68) 0%, rgba(7, 18, 48, 0.84) 100%);
+  border: 1px solid var(--line); backdrop-filter: blur(16px);
+  transition: transform 0.4s var(--ease), border-color 0.3s, box-shadow 0.4s var(--ease);
+}
+.phase-card:hover { transform: translateY(-6px); border-color: var(--line-bright); box-shadow: 0 26px 54px rgba(37, 99, 235, 0.28); }
+.phase-card::after {
+  content: ""; position: absolute; right: -30px; top: -30px; width: 130px; height: 130px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.22), transparent 68%); pointer-events: none;
+}
+.phase-index { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--cyan); letter-spacing: 0.1em; }
+.phase-card h4 { margin: 0.45rem 0 0.4rem; font-size: 1.05rem; font-weight: 700; }
+.phase-card p { margin: 0; font-size: 0.84rem; color: var(--ink-2); line-height: 1.55; }
+.phase-meta {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; margin-top: 1rem;
+  padding-top: 0.8rem; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.74rem; color: var(--muted);
+}
+.phase-meta strong { color: #fff; font-size: 0.9rem; }
+
+.note {
+  margin-top: 1.2rem; padding: 0.9rem 1.1rem; border-radius: 14px; font-size: 0.84rem;
+  background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.4); color: #fde9c8;
+  display: flex; gap: 0.65rem; align-items: flex-start; line-height: 1.55;
+}
+.note b { color: #fef3c7; }
+
+/* ============================================================
+   11. FORM + TABLE
+   ============================================================ */
+.split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+form.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; align-items: end; }
+.tips { display: grid; gap: 0.7rem; }
+.tip { display: flex; gap: 0.65rem; font-size: 0.82rem; color: var(--ink-2); line-height: 1.5; }
+.tip-icon {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  background: rgba(34, 211, 238, 0.14); border: 1px solid rgba(34, 211, 238, 0.3); color: var(--cyan); font-size: 0.8rem;
+}
+.tip b { color: #fff; }
+
+.table-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.filter-tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.filter-tab {
+  padding: 0.34rem 0.72rem; border-radius: 9px; font-size: 0.75rem; font-weight: 700;
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ink-2); cursor: pointer; font-family: inherit;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.filter-tab:hover { background: rgba(56, 189, 248, 0.2); border-color: var(--cyan); color: #fff; }
+.filter-tab.active { background: rgba(37, 99, 235, 0.5); border-color: var(--cyan); color: #fff; }
+.search-box { position: relative; }
+.search-box input { padding: 0.42rem 0.8rem 0.42rem 2rem; font-size: 0.8rem; border-radius: 10px; width: 230px; }
+.search-icon { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 0.78rem; }
+
+.table-wrap { overflow-x: auto; border-radius: 14px; border: 1px solid rgba(125, 185, 255, 0.2); }
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; background: rgba(4, 12, 34, 0.7); }
+th, td { padding: 0.72rem 0.85rem; text-align: left; border-bottom: 1px solid rgba(125, 185, 255, 0.13); white-space: nowrap; }
+th {
+  color: var(--cyan); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em;
+  background: rgba(12, 30, 74, 0.92); font-weight: 700; position: sticky; top: 0;
+}
+tbody tr { transition: background 0.25s, transform 0.25s; cursor: pointer; }
+tbody tr:hover { background: rgba(37, 99, 235, 0.2); }
+.mig-id { font-weight: 700; color: #fff; font-family: var(--mono); }
+.route { color: var(--ink-2); font-family: var(--mono); font-size: 0.83rem; }
+.route .arr { color: var(--cyan); margin: 0 0.35rem; font-weight: 800; }
+.ns-tag {
+  display: inline-block; padding: 0.08rem 0.4rem; border-radius: 5px; font-size: 0.67rem;
+  background: rgba(255, 255, 255, 0.09); color: var(--ink-2); margin-right: 0.35rem; font-family: var(--mono);
+}
+.muted { color: var(--muted); }
+
+.state {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.22rem 0.62rem;
+  border-radius: 999px; font-size: 0.7rem; font-weight: 700; font-family: var(--mono);
+  background: rgba(125, 185, 255, 0.18);
+}
+.state::before { content: ""; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: currentColor; }
+.state.run { color: #bae6fd; background: rgba(6, 182, 212, 0.32); border: 1px solid rgba(6, 182, 212, 0.6); animation: glow 1.7s ease-in-out infinite; }
+.state.ok { color: #a7f3d0; background: rgba(16, 185, 129, 0.22); border: 1px solid rgba(16, 185, 129, 0.55); }
+.state.bad { color: #fecdd3; background: rgba(239, 68, 68, 0.26); border: 1px solid rgba(239, 68, 68, 0.55); }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 0 rgba(6, 182, 212, 0); } 50% { box-shadow: 0 0 14px rgba(6, 182, 212, 0.7); } }
+
+.prog { width: 104px; height: 7px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; position: relative; }
+.prog > i {
+  position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px;
+  background: linear-gradient(90deg, var(--cyan), var(--azure)); transition: width 0.8s var(--ease);
+}
+.prog.run > i::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: shine 1.4s linear infinite;
+}
+@keyframes shine { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+.empty { text-align: center; padding: 3rem 1rem; color: var(--ink-2); }
+.empty .orbit {
+  width: 58px; height: 58px; margin: 0 auto 1rem; border-radius: 50%;
+  border: 2px dashed rgba(56, 189, 248, 0.55); animation: spin 9s linear infinite;
+}
+</style>
+<style>
+/* ============================================================
+   12. TELEMETRY CONSOLE
+   ============================================================ */
+.console-body {
+  background: rgba(2, 7, 22, 0.88); border: 1px solid rgba(125, 185, 255, 0.2); border-radius: 14px;
+  padding: 0.85rem 1rem; font-family: var(--mono); font-size: 0.75rem; line-height: 1.5;
+  height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem;
+}
+.log-line { display: flex; gap: 0.6rem; color: var(--ink-2); }
+.log-time { color: var(--muted); flex-shrink: 0; }
+.log-tag { font-weight: 700; color: var(--cyan); flex-shrink: 0; min-width: 4.5rem; }
+.log-tag.err { color: var(--rose); }
+.log-tag.ok { color: var(--emerald); }
+.api-list { display: grid; gap: 0.5rem; }
+.api-row {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.75rem; border-radius: 11px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 0.76rem; color: var(--ink-2);
+}
+.api-row .verb { font-weight: 700; font-size: 0.66rem; padding: 0.15rem 0.42rem; border-radius: 5px; }
+.verb.get { color: #a7f3d0; background: rgba(16, 185, 129, 0.2); }
+.verb.post { color: #bfdbfe; background: rgba(37, 99, 235, 0.28); }
+.api-row code { color: #fff; }
+
+/* ============================================================
+   13. CTA BAND + FOOTER
+   ============================================================ */
+.cta-band { margin-top: clamp(2.6rem, 6vw, 4.6rem); }
+.cta-inner {
+  position: relative; overflow: hidden; padding: clamp(1.8rem, 4vw, 3rem);
+  border-radius: 26px; text-align: center;
+  background: linear-gradient(135deg, rgba(29, 78, 216, 0.55), rgba(8, 22, 58, 0.85) 55%, rgba(6, 20, 52, 0.9));
+  border: 1px solid var(--line-bright); box-shadow: var(--shadow-lg);
+}
+.cta-inner::before {
+  content: ""; position: absolute; inset: -40% -10% auto; height: 260px;
+  background: radial-gradient(50% 100% at 50% 0%, rgba(56, 189, 248, 0.35), transparent 70%);
+  pointer-events: none;
+}
+.cta-inner h2 { position: relative; margin: 0 0 0.6rem; font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -0.02em; }
+.cta-inner p { position: relative; margin: 0 auto 1.5rem; max-width: 56ch; color: var(--ink-2); }
+.cta-actions { position: relative; display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; }
+
+.site-footer { margin-top: clamp(2.6rem, 6vw, 4rem); border-top: 1px solid var(--line); background: rgba(4, 11, 30, 0.72); backdrop-filter: blur(16px); }
+.footer-grid { max-width: 1400px; margin: 0 auto; padding: clamp(2rem, 4vw, 3rem) clamp(1rem, 3vw, 2.2rem); display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 2rem; }
+.footer-brand p { color: var(--ink-2); font-size: 0.87rem; margin: 0.9rem 0 0; max-width: 34ch; }
+.footer-col h5 { margin: 0 0 0.8rem; font-size: 0.7rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--cyan); font-weight: 700; }
+.footer-col a, .footer-col span { display: block; font-size: 0.85rem; color: var(--ink-2); padding: 0.22rem 0; transition: color 0.2s; }
+.footer-col a:hover { color: #fff; }
+.footer-col code { font-family: var(--mono); font-size: 0.78rem; }
+.footer-bottom {
+  max-width: 1400px; margin: 0 auto; padding: 1.1rem clamp(1rem, 3vw, 2.2rem);
+  border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  font-size: 0.78rem; color: var(--muted);
+}
+
+/* ============================================================
+   14. TOASTS + MODAL
+   ============================================================ */
+.toast-wrap { position: fixed; right: 1.3rem; bottom: 1.3rem; display: grid; gap: 0.6rem; z-index: 120; }
+.toast {
+  min-width: 270px; max-width: 380px; padding: 0.8rem 1.05rem; border-radius: 14px; font-size: 0.86rem;
+  background: rgba(8, 21, 54, 0.94); border: 1px solid var(--line-bright);
+  border-left: 4px solid var(--azure); box-shadow: 0 18px 40px rgba(2, 6, 20, 0.55);
+  animation: toastin 0.4s var(--ease) both; backdrop-filter: blur(14px); color: #fff;
+}
+.toast.ok { border-left-color: var(--emerald); }
+.toast.err { border-left-color: var(--rose); }
+.toast.out { animation: toastout 0.35s var(--ease) forwards; }
+@keyframes toastin { from { opacity: 0; transform: translateX(60px) scale(0.95); } to { opacity: 1; transform: none; } }
+@keyframes toastout { to { opacity: 0; transform: translateX(60px); } }
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 1.4rem;
+  background: rgba(2, 6, 20, 0.78); backdrop-filter: blur(10px);
+  opacity: 0; pointer-events: none; transition: opacity 0.3s var(--ease);
+}
+.modal-backdrop.open { opacity: 1; pointer-events: auto; }
+.modal-box {
+  width: 100%; max-width: 800px; max-height: 86vh; overflow-y: auto;
+  background: linear-gradient(160deg, rgba(14, 36, 88, 0.96) 0%, rgba(4, 12, 32, 0.98) 100%);
+  border: 1px solid var(--line-bright); border-radius: var(--radius); padding: clamp(1.2rem, 3vw, 1.7rem);
+  box-shadow: var(--shadow-lg), 0 0 60px rgba(37, 99, 235, 0.25);
+  transform: translateY(22px) scale(0.97); transition: transform 0.3s var(--ease);
+}
+.modal-backdrop.open .modal-box { transform: none; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.3rem; }
+.modal-title { font-size: 1.15rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.modal-close {
+  background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer;
+  padding: 0.2rem 0.5rem; border-radius: 8px; line-height: 1;
+}
+.modal-close:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.diag-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+.diag-card { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(125, 185, 255, 0.2); border-radius: 13px; padding: 0.9rem 1.05rem; }
+.diag-card h4 { margin: 0 0 0.6rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.11em; color: var(--cyan); }
+.diag-item { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; font-size: 0.81rem; padding: 0.32rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.diag-item:last-child { border-bottom: none; }
+.diag-item span:first-child { color: var(--ink-2); }
+.diag-item span:last-child { color: #fff; font-family: var(--mono); font-weight: 600; text-align: right; }
+.raw-json {
+  margin-top: 0.9rem; background: #020617; border: 1px solid rgba(125, 185, 255, 0.2);
+  border-radius: 11px; padding: 0.8rem; font-family: var(--mono); font-size: 0.73rem;
+  color: var(--cyan); max-height: 170px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+}
+
+/* ============================================================
+   15. MOTION + REVEAL
+   ============================================================ */
+@keyframes rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* ============================================================
+   16. WEBGL FALLBACK (pure CSS 3D cubes)
+   ============================================================ */
+body.no-webgl #stageCanvas { display: none; }
+.stage-fallback { position: absolute; inset: 0; z-index: 2; display: none; perspective: 900px; }
+body.no-webgl .stage-fallback { display: block; }
+.fb-scene { position: absolute; inset: 0; display: grid; place-items: center; transform-style: preserve-3d; }
+.fb-node { position: absolute; width: 92px; height: 92px; transform-style: preserve-3d; animation: floaty 5s ease-in-out infinite; }
+.fb-node i {
+  position: absolute; inset: 0; border: 1px solid rgba(186, 230, 253, 0.6);
+  background: linear-gradient(145deg, rgba(56, 189, 248, 0.7), rgba(30, 58, 138, 0.85));
+  display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: 0.66rem;
+  letter-spacing: 0.08em; font-family: var(--mono); color: #e0f2fe;
+}
+.fb-node i:nth-child(1) { transform: translateZ(46px); }
+.fb-node i:nth-child(2) { transform: rotateY(180deg) translateZ(46px); }
+.fb-node i:nth-child(3) { transform: rotateY(90deg) translateZ(46px); }
+.fb-node i:nth-child(4) { transform: rotateY(-90deg) translateZ(46px); }
+.fb-node i:nth-child(5) { transform: rotateX(90deg) translateZ(46px); }
+.fb-node i:nth-child(6) { transform: rotateX(-90deg) translateZ(46px); }
+.fb-node.src { left: 8%; animation-delay: -1.5s; }
+.fb-node.src i { background: linear-gradient(145deg, rgba(16, 185, 129, 0.72), rgba(6, 78, 59, 0.9)); }
+.fb-node.brk { left: calc(50% - 46px); animation: spinny 11s linear infinite; }
+.fb-node.brk i { background: linear-gradient(145deg, rgba(245, 158, 11, 0.75), rgba(120, 53, 15, 0.92)); }
+.fb-node.tgt { right: 8%; animation-delay: -3s; }
+.fb-node.tgt i { background: linear-gradient(145deg, rgba(37, 99, 235, 0.78), rgba(23, 37, 84, 0.94)); }
+@keyframes floaty { 50% { transform: translateY(-14px) rotateZ(2deg); } }
+@keyframes spinny { to { transform: rotateY(360deg); } }
+
+/* ============================================================
+   17. RESPONSIVE
+   ============================================================ */
+@media (max-width: 1080px) {
+  .hero-inner { grid-template-columns: 1fr; min-height: 0; }
+  .hero::before { background: linear-gradient(180deg, rgba(3, 10, 28, 0.9) 0%, rgba(3, 10, 28, 0.62) 45%, rgba(3, 10, 28, 0.85) 100%); }
+  .hero { padding-bottom: 3rem; }
+  .stage-legend { display: none; }
+  .split { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .nav-links { display: none; }
+  .nav-toggle { display: grid; place-items: center; }
+  .nav-links.open {
+    display: flex; position: absolute; top: var(--nav-h); left: 0; right: 0; flex-direction: column;
+    align-items: stretch; gap: 0.2rem; padding: 0.7rem;
+    background: rgba(4, 11, 30, 0.97); border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(18px);
+  }
+  .charts { grid-template-columns: 1fr; }
+  .diag-grid { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+  .hud-select { display: none; }
+}
+@media (max-width: 620px) {
+  form.controls { grid-template-columns: 1fr; }
+  .hero-stats { grid-template-columns: 1fr 1fr; }
+  .pill#clock { display: none; }
+  .footer-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+<!--CSSEND-->
 </head>
 <body>
+<canvas id="cloudSkyCanvas" aria-hidden="true"></canvas>
+<div class="sky-scrim" aria-hidden="true"></div>
 
-<div class="stars" id="stars"></div>
-<main>
-  <header>
-    <h1>KAIROKUBE CONTROL CONSOLE</h1>
-    <div style="display:flex;gap:.6rem;align-items:center">
-      <span class="pill" id="clock">--:--:--</span>
-      <span class="pill live" id="link">connecting</span>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="page">
+
+  <!-- ================= NAV ================= -->
+  <header class="site-nav" id="siteNav">
+    <a class="brand" href="#top">
+      <span class="logo-wrap"><span class="logo">K</span><span class="logo-ring"></span></span>
+      <span class="wordmark"><b>KairoKube</b><span>migration control plane</span></span>
+    </a>
+    <nav class="nav-links" id="navLinks" aria-label="Primary">
+      <a href="#overview" class="active">Overview</a>
+      <a href="#metrics">Metrics</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#migrations">Migrations</a>
+      <a href="#telemetry">Telemetry</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="pill" id="clock">--:--:-- UTC</span>
+      <span class="pill" id="link"><span class="dot pulse"></span><span id="linkText">connecting</span></span>
+      <select class="hud-select" id="skyThemeSelect" title="Atmosphere">
+        <option value="azure" selected>Sky · Azure</option>
+        <option value="sunset">Sky · Sunset</option>
+        <option value="twilight">Sky · Twilight</option>
+        <option value="midnight">Sky · Midnight</option>
+      </select>
+      <select class="hud-select" id="refreshRate" title="Polling frequency">
+        <option value="1000">Poll 1.0s</option>
+        <option value="2500" selected>Poll 2.5s</option>
+        <option value="5000">Poll 5.0s</option>
+        <option value="0">Paused</option>
+      </select>
+      <button class="btn-hud" id="manualSyncBtn" title="Sync now [R]"><span id="syncIcon">↻</span> Sync</button>
+      <button class="btn-hud" id="audioToggleBtn" title="Toggle sound feedback"><span id="audioIcon">🔊</span></button>
+      <a class="btn-primary" href="#start">Start migration</a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button>
     </div>
   </header>
 
-  <div class="banner">Mock mode: a COMPLETED migration here is a simulated workflow and does not move a running process. Live Kubelet restore is not verified.</div>
+  <!-- ================= HERO / 3D STAGE ================= -->
+  <section class="hero" id="overview">
+    <canvas id="stageCanvas" aria-hidden="true"></canvas>
+    <div class="stage-fallback" aria-hidden="true">
+      <div class="fb-scene">
+        <div class="fb-node src"><i>SRC</i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="fb-node brk"><i>BRK</i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="fb-node tgt"><i>TGT</i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
 
-  <section class="cards" id="cards"></section>
+    <div class="stage-hud">
+      <span class="stage-badge"><span class="dot pulse"></span>Live 3D topology</span>
+      <span class="stage-note" id="hudMode">CRIU socket relay · mock provider</span>
+    </div>
+    <div class="stage-legend">
+      <span style="--c:#34d399"><i></i>source pod</span>
+      <span style="--c:#fbbf24"><i></i>message broker</span>
+      <span style="--c:#60a5fa"><i></i>target node</span>
+      <span style="--c:#22d3ee"><i></i>replay conduit</span>
+    </div>
 
-  <section class="panel">
-    <h2>START A MIGRATION</h2>
-    <form class="controls" id="startForm">
-      <label>Source pod <input name="source_pod" required placeholder="game2048-0" autocomplete="off"></label>
-      <label>Namespace <input name="namespace" placeholder="default" autocomplete="off"></label>
-      <label>Target node <input name="target_node" required placeholder="worker-2" autocomplete="off"></label>
-      <button type="submit" id="startBtn">Start migration</button>
-    </form>
-    <div class="flash" id="flash"></div>
-  </section>
-
-  <section class="panel">
-    <h2>MIGRATIONS</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>ID</th><th>Source</th><th>Target</th><th>Progress</th><th>State</th><th>Downtime (s)</th><th>Cutoff (s)</th><th>λ msg/s</th><th>μ msg/s</th><th>Error</th><th>Control</th></tr>
-        </thead>
-        <tbody id="rows"><tr><td colspan="11" class="muted">Loading…</td></tr></tbody>
-      </table>
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <span class="eyebrow" id="heroBadge">Mission control · ready</span>
+        <h1>Move stateful Kubernetes workloads <span class="grad">without dropping a message.</span></h1>
+        <p class="hero-lede" id="heroText">
+          KairoKube chains container checkpointing, artifact transfer and RabbitMQ message
+          replay into one supervised handoff — with an adaptive cutoff that adapts to live traffic.
+        </p>
+        <div class="hero-actions">
+          <a class="btn-primary" href="#start">Initiate a handoff</a>
+          <a class="btn-primary ghost" href="#pipeline">How the cutover works</a>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat"><b id="statMigrations">0</b><span>Migrations</span></div>
+          <div class="hero-stat ring-cell">
+            <div class="ring">
+              <svg viewBox="0 0 120 120">
+                <circle class="track" cx="60" cy="60" r="50" fill="none" stroke-width="9"/>
+                <circle class="val" id="ringVal" cx="60" cy="60" r="50" fill="none" stroke-width="9"
+                        stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="314.16"/>
+              </svg>
+              <div class="num"><div><span id="ringNum">0</span>%<small>Success</small></div></div>
+            </div>
+            <span class="ring-total" id="ringTotals">0 / 0 completed</span>
+          </div>
+          <div class="hero-stat"><b id="statQueue">0</b><span>Queue depth</span></div>
+        </div>
+      </div>
+      <div class="stage-anchor" id="stageAnchor" aria-hidden="true"></div>
     </div>
   </section>
 
-  <footer>Reads GET /migrations and GET /metrics every 2.5 s. Controls call POST /migrations and POST /migrations/{id}/cancel.</footer>
-</main>
+  <!-- ================= TICKER ================= -->
+  <div class="ticker" aria-hidden="true">
+    <div class="ticker-track">
+      <span class="ticker-item">phase <b id="tickPhase">IDLE</b></span>
+      <span class="ticker-item">queue depth <b id="tickQueue">0</b></span>
+      <span class="ticker-item">λ arrival <b id="tickLambda">0.0</b> msg/s</span>
+      <span class="ticker-item">μ capacity <b id="tickMu">0.0</b> msg/s</span>
+      <span class="ticker-item">ρ utilization <b id="tickUtil">0.0%</b></span>
+      <span class="ticker-item">completed <b id="tickDone">0</b></span>
+      <span class="ticker-item">replayed <b id="tickReplay">0</b> msgs</span>
+    </div>
+  </div>
+  <!-- ================= ACTIVE HANDOFF ================= -->
+  <div style="max-width:1400px;margin:0 auto;padding:0 clamp(1rem,3vw,2.2rem);">
+    <div class="flight" id="activeFlightBox">
+      <div class="flight-head">
+        <div class="flight-route">
+          <span id="flightPod">pod-name</span><span class="arr">➔</span><span id="flightTarget">target-node</span>
+        </div>
+        <button class="btn-mini danger" id="heroCancelBtn">Cancel migration</button>
+      </div>
+      <div class="flight-meta">
+        <span>Elapsed <strong id="flightElapsed">0.0s</strong></span>
+        <span>Cutoff <strong id="flightCutoff">–</strong></span>
+        <span>λ <strong id="flightLambda">0.0 msg/s</strong></span>
+        <span>Replayed <strong id="flightReplayed">0 msgs</strong></span>
+      </div>
+    </div>
+  </div>
 
+  <!-- ================= METRICS ================= -->
+  <section class="section reveal" id="metrics">
+    <div class="section-head">
+      <span class="eyebrow">Fleet telemetry</span>
+      <h2>Everything the handoff is doing right now</h2>
+      <p>Live counters from <code style="font-family:var(--mono)">GET /metrics</code>, polled from the manager while this page is open. Nothing here is simulated.</p>
+    </div>
+    <div class="cards" id="cards"></div>
+    <div class="charts">
+      <div class="panel">
+        <div class="chart-head">
+          <span class="chart-title">RabbitMQ queue depth</span>
+          <span class="chart-curr" id="chartQueueVal">0 msgs</span>
+        </div>
+        <svg class="sparkline-svg" id="sparkQueue" viewBox="0 0 300 84" preserveAspectRatio="none">
+          <path class="sparkline-area" id="sparkQueueArea" d=""/>
+          <path class="sparkline-path" id="sparkQueueLine" d=""/>
+        </svg>
+        <div class="chart-keys"><span style="color:var(--cyan)"><i></i>messages waiting</span></div>
+      </div>
+      <div class="panel">
+        <div class="chart-head">
+          <span class="chart-title">Throughput dynamics</span>
+          <span class="chart-curr" id="chartFlowVal">λ: 0.0 | μ: 0.0</span>
+        </div>
+        <svg class="sparkline-svg" id="sparkFlow" viewBox="0 0 300 84" preserveAspectRatio="none">
+          <path class="sparkline-path" id="sparkLambdaLine" d=""/>
+          <path class="sparkline-subpath" id="sparkMuLine" d=""/>
+        </svg>
+        <div class="chart-keys">
+          <span style="color:var(--cyan)"><i></i>λ arrival rate</span>
+          <span style="color:var(--violet)"><i></i>μ target capacity</span>
+        </div>
+      </div>
+    </div>
+  </section>
 
+  <!-- ================= PIPELINE ================= -->
+  <section class="section reveal" id="pipeline">
+    <div class="section-head">
+      <span class="eyebrow">The handoff pipeline</span>
+      <h2>Nine supervised phases, one consistent end state</h2>
+      <p>Each phase reports its own duration back into these cards as a migration runs. The adaptive cutoff is computed from measured λ and μ, not a fixed timer.</p>
+    </div>
+    <div class="phases">
+      <article class="phase-card">
+        <div class="phase-index">01 / CHECKPOINT</div>
+        <h4>Freeze the source</h4>
+        <p>The kubelet is asked to checkpoint the source container, producing a CRIU archive of memory, fds and sockets.</p>
+        <div class="phase-meta"><span>Last duration</span><strong id="durCp">–</strong></div>
+      </article>
+      <article class="phase-card">
+        <div class="phase-index">02 / TRANSFER</div>
+        <h4>Move the artifact</h4>
+        <p>The archive is copied to the target with a SHA-256 verified transfer, so a truncated file can never be restored.</p>
+        <div class="phase-meta"><span>Last duration</span><strong id="durTransfer">–</strong></div>
+      </article>
+      <article class="phase-card">
+        <div class="phase-index">03 / RESTORE + REPLAY</div>
+        <h4>Rebuild the process</h4>
+        <p>The target container starts from the archive, then RabbitMQ messages queued before the cutoff are replayed and deduplicated.</p>
+        <div class="phase-meta"><span>Replay duration</span><strong id="durReplay">–</strong></div>
+      </article>
+      <article class="phase-card">
+        <div class="phase-index">04 / CUTOVER</div>
+        <h4>Swap and verify</h4>
+        <p>Traffic shifts once replay has drained the backlog, the old pod is released, and the result is verified end to end.</p>
+        <div class="phase-meta"><span>Service downtime</span><strong id="durRestore">–</strong></div>
+      </article>
+    </div>
+    <div class="note">
+      <span>⚠</span>
+      <div><b>Mock mode is a simulation.</b> The default provider writes a synthetic archive and never moves a running process, and Kubelet-produced archives have no verified restore path yet. Read the numbers as orchestration telemetry, not as a production cutover.</div>
+    </div>
+  </section>
+
+  <!-- ================= START MIGRATION ================= -->
+  <section class="section reveal" id="start">
+    <div class="split">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Start a migration</h3>
+          <span class="tag">POST /migrations</span>
+        </div>
+        <form class="controls" id="startForm">
+          <label>Source pod
+            <input name="source_pod" id="inputSourcePod" required placeholder="game2048-0" autocomplete="off">
+          </label>
+          <label>Namespace
+            <input name="namespace" id="inputNamespace" placeholder="default" autocomplete="off" value="default">
+          </label>
+          <label>Target node
+            <input name="target_node" id="inputTargetNode" required placeholder="worker-2" autocomplete="off">
+          </label>
+          <button type="submit" class="btn-solid" id="startBtn">Initiate migration</button>
+        </form>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Before you dispatch</h3></div>
+        <div class="tips">
+          <div class="tip"><span class="tip-icon">1</span><div>A second request for a pod with an active migration returns <b>409 Conflict</b>.</div></div>
+          <div class="tip"><span class="tip-icon">2</span><div>In mock mode the adaptive cutoff sits near <b>30 s</b> under light traffic. That wait is expected.</div></div>
+          <div class="tip"><span class="tip-icon">3</span><div>History lives in memory. Restarting the manager clears the table below.</div></div>
+          <div class="tip"><span class="tip-icon">4</span><div>Quick dispatch:
+            <span class="quick-row">
+              <button type="button" class="quick-chip" data-pod="game2048-0" data-ns="default" data-node="worker-2">game2048-0 ➔ worker-2</button>
+              <button type="button" class="quick-chip" data-pod="consumer-0" data-ns="default" data-node="worker-1">consumer-0 ➔ worker-1</button>
+              <button type="button" class="quick-chip" data-pod="stream-proc-1" data-ns="default" data-node="worker-3">stream-proc-1 ➔ worker-3</button>
+            </span>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MIGRATIONS TABLE ================= -->
+  <section class="section reveal" id="migrations">
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Migration registry</h3>
+        <span class="tag">Live · GET /migrations</span>
+      </div>
+      <div class="table-controls">
+        <div class="filter-tabs" id="filterTabs">
+          <button type="button" class="filter-tab active" data-filter="all">All</button>
+          <button type="button" class="filter-tab" data-filter="active">Active</button>
+          <button type="button" class="filter-tab" data-filter="completed">Completed</button>
+          <button type="button" class="filter-tab" data-filter="failed">Failed</button>
+        </div>
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Filter pod, node, ID…">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Route</th><th>Progress</th><th>State</th><th>Downtime</th>
+              <th>Cutoff (τ)</th><th>λ / μ msg/s</th><th>Error / rollback</th><th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  <!-- ================= TELEMETRY ================= -->
+  <section class="section reveal" id="telemetry">
+    <div class="section-head">
+      <span class="eyebrow">Telemetry</span>
+      <h2>Event log and the API behind this page</h2>
+      <p>Every state transition the console observes is appended here. All values come from the manager's own endpoints.</p>
+    </div>
+    <div class="split">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Event log</h3>
+          <button type="button" class="btn-hud" id="clearLogBtn">Clear</button>
+        </div>
+        <div class="console-body" id="consoleBody">
+          <div class="log-line">
+            <span class="log-time">[00:00:00]</span>
+            <span class="log-tag">[INIT]</span>
+            <span>Control Console initialized. Connecting to manager endpoints…</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Manager endpoints</h3></div>
+        <div class="api-list">
+          <div class="api-row"><span class="verb get">GET</span><code>/health</code></div>
+          <div class="api-row"><span class="verb get">GET</span><code>/migrations</code></div>
+          <div class="api-row"><span class="verb post">POST</span><code>/migrations</code></div>
+          <div class="api-row"><span class="verb get">GET</span><code>/migrations/{id}</code></div>
+          <div class="api-row"><span class="verb post">POST</span><code>/migrations/{id}/cancel</code></div>
+          <div class="api-row"><span class="verb get">GET</span><code>/metrics</code></div>
+        </div>
+        <div class="signal-list" style="display:grid;gap:0.5rem;margin-top:1rem;">
+          <div class="api-row"><span>Current phase</span><strong id="signalPhase" style="color:#fff;margin-left:auto">IDLE</strong></div>
+          <div class="api-row"><span>Utilization (ρ)</span><strong id="signalUtil" style="color:#fff;margin-left:auto">0.0% · Feasible</strong></div>
+          <div class="api-row"><span>λ / μ msg/s</span><strong id="signalFlow" style="color:#fff;margin-left:auto">0.0 / 0.0</strong></div>
+          <div class="api-row"><span>Queue depth</span><strong id="signalQueue" style="color:#fff;margin-left:auto">0 msgs</strong></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="section cta-band reveal">
+    <div class="cta-inner">
+      <h2>Run a handoff and watch it in three dimensions</h2>
+      <p>Point the console at a running stack, dispatch a migration, and follow the checkpoint, replay conduit and cutover as they happen.</p>
+      <div class="cta-actions">
+        <a class="btn-primary" href="#start">Initiate migration</a>
+        <a class="btn-primary ghost" href="#migrations">Open the registry</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="#top">
+          <span class="logo-wrap"><span class="logo">K</span><span class="logo-ring"></span></span>
+          <span class="wordmark"><b>KairoKube</b><span>migration control plane</span></span>
+        </a>
+        <p>A research prototype combining message-based stateful microservice migration with Kubernetes container checkpointing.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Console</h5>
+        <a href="#overview">Overview</a>
+        <a href="#metrics">Metrics</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#migrations">Registry</a>
+        <a href="#telemetry">Telemetry</a>
+      </div>
+      <div class="footer-col">
+        <h5>Lifecycle</h5>
+        <span>Preparing</span><span>Checkpoint</span><span>Transfer</span>
+        <span>Restore</span><span>Replay</span><span>Cutover</span>
+      </div>
+      <div class="footer-col">
+        <h5>Limits</h5>
+        <span>Mock mode simulates</span>
+        <span>No Kubelet restore yet</span>
+        <span>No StatefulSet support</span>
+        <span>In-memory history</span>
+        <span>No API auth</span>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>KairoKube Control Console · served from <code style="font-family:var(--mono)">/dashboard</code></span>
+      <span>Research prototype — not for production cutover</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ================= INSPECTOR MODAL ================= -->
+<div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalId">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title">
+        <span>Migration diagnostics</span>
+        <span class="pill" id="modalId">MIG-XXXX</span>
+      </div>
+      <button type="button" class="modal-close" id="modalCloseBtn" aria-label="Close">✕</button>
+    </div>
+    <div class="diag-grid">
+      <div class="diag-card">
+        <h4>Workload &amp; target</h4>
+        <div class="diag-item"><span>Source pod</span><span id="mPod">–</span></div>
+        <div class="diag-item"><span>Namespace</span><span id="mNs">–</span></div>
+        <div class="diag-item"><span>Target node</span><span id="mNode">–</span></div>
+        <div class="diag-item"><span>Execution mode</span><span id="mMode">–</span></div>
+        <div class="diag-item"><span>Current state</span><span id="mState">–</span></div>
+      </div>
+      <div class="diag-card">
+        <h4>Phase timings</h4>
+        <div class="diag-item"><span>Checkpoint creation</span><span id="mDurCp">–</span></div>
+        <div class="diag-item"><span>Artifact transfer</span><span id="mDurTr">–</span></div>
+        <div class="diag-item"><span>Target restoration</span><span id="mDurRest">–</span></div>
+        <div class="diag-item"><span>Message replay</span><span id="mDurRepl">–</span></div>
+        <div class="diag-item"><span>Service downtime</span><span id="mDowntime">–</span></div>
+      </div>
+      <div class="diag-card">
+        <h4>MS2M mathematical model</h4>
+        <div class="diag-item"><span>Arrival rate (λ)</span><span id="mLambda">–</span></div>
+        <div class="diag-item"><span>Target processing rate (μ)</span><span id="mMu">–</span></div>
+        <div class="diag-item"><span>Cluster utilization (ρ)</span><span id="mUtil">–</span></div>
+        <div class="diag-item"><span>Calculated cutoff (τ)</span><span id="mCutoff">–</span></div>
+      </div>
+      <div class="diag-card">
+        <h4>Artifacts &amp; sequence</h4>
+        <div class="diag-item"><span>Checkpoint size</span><span id="mCpSize">–</span></div>
+        <div class="diag-item"><span>Replayed messages</span><span id="mReplMsgs">–</span></div>
+        <div class="diag-item"><span>Duplicates detected</span><span id="mDups">–</span></div>
+        <div class="diag-item"><span>Checkpoint path</span><span id="mCpPath" style="font-size:0.7rem;max-width:170px;overflow:hidden;text-overflow:ellipsis">–</span></div>
+      </div>
+    </div>
+    <div style="margin-top:1.1rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+      <h4 style="margin:0;font-size:0.71rem;text-transform:uppercase;letter-spacing:0.11em;color:var(--muted)">Raw snapshot telemetry</h4>
+      <button type="button" class="btn-hud" id="copyJsonBtn">Copy JSON</button>
+    </div>
+    <div class="raw-json" id="rawJson"></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
 <script>
 "use strict";
+/* ============================================================
+   ATMOSPHERE — procedural cloud-sky WebGL background
+   ============================================================ */
+(function initCloudSky() {
+  var canvas = document.getElementById("cloudSkyCanvas");
+  if (!canvas) return;
+  var gl = canvas.getContext("webgl", { alpha: false, antialias: false, depth: false }) ||
+           canvas.getContext("experimental-webgl");
+  if (!gl) { canvas.style.display = "none"; return; }
 
-// Escapes server-provided text before it goes into the page.
+  var MAX_DPR = 1.75, PUFF_UP = 0.34, PUFF_DOWN = 0.19, ERODE = 0.7,
+      SHADOW_STEP = 0.085, NEAR_CELL = 1.05, FAR_CELL = 2.15, FAR_MIX = 0.55,
+      NEAR_DRIFT = 0.055, FAR_DRIFT = 0.026, CIRRUS_DRIFT = 0.014,
+      PUFF_WMAX = 2.15, SHADE_BLEND = 12.0;
+
+  var VERT_SRC = "attribute vec2 a_pos;\nvoid main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }";
+  var FRAG_SRC = [
+    "#ifdef GL_FRAGMENT_PRECISION_HIGH", "precision highp float;", "#else", "precision mediump float;", "#endif", "",
+    "uniform vec2 uRes;", "uniform float uNearX, uFarX, uCirrusX;",
+    "uniform float uCoverage, uSize, uSoftness, uShadow, uCirrus;",
+    "uniform vec3 uZenith, uHorizon, uCloud;", "uniform vec4 uGlow;",
+    "uniform vec2 uSun;", "uniform vec2 uParallax;", "",
+    "vec2 hash22(vec2 p){ vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));",
+    "  q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }", "",
+    "float hash12(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031);",
+    "  q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }", "",
+    "float vnoise(vec2 x){ vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);",
+    "  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),",
+    "             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y); }", "",
+    "float fbm(vec2 p){ float a = 0.5, s = 0.0;",
+    "  for (int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; a *= 0.5; } return s; }", "",
+    "vec2 blobs(vec2 uv, float seed){ vec2 id = floor(uv), f = fract(uv);",
+    "  float best = -1e4, wsum = 0.0, ysum = 0.0;",
+    "  float wMax = min(" + PUFF_WMAX.toFixed(3) + ", 0.72 * uSize);",
+    "  float reach = min(2.0, ceil(wMax + 0.85) - 1.0);",
+    "  for (int j = -2; j <= 2; j++){ for (int i = -2; i <= 2; i++){",
+    "    vec2 o = vec2(float(i), float(j));",
+    "    if (max(abs(o.x), abs(o.y)) > reach) continue;",
+    "    vec2 h = hash22(id + o + seed);",
+    "    if (fract(h.x * 37.1) > uCoverage) continue;",
+    "    vec2 c = o + 0.15 + h * 0.7;",
+    "    float w = min(" + PUFF_WMAX.toFixed(3) + ", (0.30 + 0.42 * fract(h.y * 19.7)) * uSize);",
+    "    vec2 d = f - c;",
+    "    float ry = (d.y > 0.0 ? " + PUFF_UP.toFixed(3) + " : " + PUFF_DOWN.toFixed(3) + ") * uSize * (0.8 + 0.5 * fract(h.y * 7.3));",
+    "    float e = length(vec2(d.x / max(w, 1e-3), d.y / max(ry, 1e-3)));",
+    "    float val = 1.0 - e;",
+    "    float yN = d.y / max(ry, 1e-3);",
+    "    if (val > best){ float k = exp(" + SHADE_BLEND.toFixed(1) + " * (best - val));",
+    "      wsum = wsum * k + 1.0; ysum = ysum * k + yN; best = val; }",
+    "    else { float g = exp(" + SHADE_BLEND.toFixed(1) + " * (val - best)); wsum += g; ysum += g * yN; }",
+    "  } }",
+    "  return vec2(best, ysum / max(wsum, 1e-4)); }", "",
+    "vec2 cloudField(vec2 uv, float seed, float detailScale){",
+    "  vec2 b = blobs(uv, seed);",
+    "  float n = fbm(uv * detailScale + seed * 3.1) * 0.72 + fbm(uv * detailScale * 3.3 + seed * 7.7) * 0.28;",
+    "  return vec2(b.x - (1.0 - n) * " + ERODE.toFixed(3) + ", b.y); }", "",
+    "vec3 shadeCloud(float dyNorm, vec3 sky){",
+    "  float t = smoothstep(-0.95, 0.25, dyNorm);",
+    "  vec3 base = mix(uCloud * 0.52, sky, 0.34);",
+    "  return mix(mix(uCloud, base, uShadow), uCloud, t); }", "",
+    "void main(){",
+    "  vec2 frag = gl_FragCoord.xy / max(uRes.y, 1.0);",
+    "  float aspect = uRes.x / max(uRes.y, 1.0);",
+    "  vec2 p = vec2(frag.x, frag.y);", "",
+    "  vec3 sky = mix(uHorizon, uZenith, smoothstep(-0.15, 1.05, p.y));",
+    "  vec2 sunP = vec2(uSun.x * aspect, uSun.y);",
+    "  float sd = length(p - sunP);",
+    "  sky += uGlow.rgb * uGlow.a * exp(-sd * 3.4) * 0.30;",
+    "  vec3 col = sky;", "",
+    "  if (uCirrus > 0.0) { vec2 cuv = vec2(p.x * 1.4 + uCirrusX, p.y * 5.5);",
+    "    float veil = fbm(cuv) * fbm(cuv * 2.3 + 9.0);",
+    "    veil = smoothstep(0.24, 0.55, veil) * smoothstep(0.15, 0.7, p.y);",
+    "    col = mix(col, uCloud, veil * uCirrus * 0.5); }", "",
+    "  vec2 fuv = vec2(p.x + uFarX, p.y) * " + FAR_CELL.toFixed(3) + " + uParallax * 0.4;",
+    "  vec2 fd = cloudField(fuv, 17.0, 11.0);",
+    "  float fa = clamp(fd.x * uSoftness, 0.0, 1.0);",
+    "  if (fa > 0.0) { vec3 lit = shadeCloud(fd.y, sky);",
+    "    col = mix(col, mix(lit, sky, " + FAR_MIX.toFixed(3) + "), fa); }", "",
+    "  vec2 nuv = vec2(p.x + uNearX, p.y) * " + NEAR_CELL.toFixed(3) + " + uParallax;",
+    "  vec2 nd = cloudField(nuv, 3.0, 8.5);",
+    "  float na = clamp(nd.x * uSoftness, 0.0, 1.0);",
+    "  if (na > 0.0) { vec3 lit = shadeCloud(nd.y, sky);",
+    "    float above = clamp(cloudField(nuv + vec2(0.0, " + SHADOW_STEP.toFixed(3) + "), 3.0, 8.5).x * uSoftness, 0.0, 1.0);",
+    "    lit *= 1.0 - 0.18 * uShadow * above;",
+    "    lit += uGlow.rgb * uGlow.a * 0.22 * exp(-length(p - sunP) * 1.6);",
+    "    col = mix(col, lit, na); }", "",
+    "  gl_FragColor = vec4(col, 1.0); }"
+  ].join("\n");
+
+  function compileShader(type, src) {
+    var s = gl.createShader(type);
+    if (!s) return null;
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error("CloudSky shader compile error:", gl.getShaderInfoLog(s));
+      gl.deleteShader(s); return null;
+    }
+    return s;
+  }
+  var vs = compileShader(gl.VERTEX_SHADER, VERT_SRC);
+  var fs = compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
+  if (!vs || !fs) return;
+  var prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error("CloudSky link error:", gl.getProgramInfoLog(prog)); return;
+  }
+  gl.useProgram(prog);
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  var aPos = gl.getAttribLocation(prog, "a_pos");
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  var locs = {};
+  function u(n) { if (!(n in locs)) locs[n] = gl.getUniformLocation(prog, n); return locs[n]; }
+  function parseColor(input, fb) {
+    if (!input) return fb;
+    var str = String(input).trim();
+    if (str.charAt(0) === "#") {
+      var hex = str.slice(1);
+      if (hex.length === 3 || hex.length === 4) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]+(hex.length === 4 ? hex[3]+hex[3] : "");
+      if (hex.length >= 6) {
+        var r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+        var a = hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+        if (!isNaN(r) && !isNaN(g) && !isNaN(b)) return [r/255, g/255, b/255, a];
+      }
+      return fb;
+    }
+    var m = str.match(/[\d.]+/g);
+    if (m && m.length >= 3) return [
+      Math.min(255, parseFloat(m[0]))/255, Math.min(255, parseFloat(m[1]))/255,
+      Math.min(255, parseFloat(m[2]))/255, m.length >= 4 ? Math.min(1, parseFloat(m[3])) : 1];
+    return fb;
+  }
+
+  var SKY_THEMES = {
+    azure:    { zenith: "#0075FF", horizon: "#B4D2F0", cloud: "#FFFFFF", glow: "#FFFFFF", density: 1.0,  speed: 1.28, size: 1.3,  softness: 2.25, shadow: 0.7,  cirrus: 1.0, sunX: 1.0,  sunY: 1.0,  parallax: 3.0, wind: 3.0, damping: 50 },
+    sunset:   { zenith: "#311042", horizon: "#fb7185", cloud: "#fed7aa", glow: "#fef08a", density: 0.85, speed: 1.1,  size: 1.4,  softness: 2.0,  shadow: 0.9,  cirrus: 0.8, sunX: 0.6,  sunY: 0.35, parallax: 2.5, wind: 2.5, damping: 40 },
+    twilight: { zenith: "#081330", horizon: "#1d4ed8", cloud: "#7dd3fc", glow: "#38bdf8", density: 0.95, speed: 1.2,  size: 1.25, softness: 2.1,  shadow: 0.75, cirrus: 0.9, sunX: 0.85, sunY: 0.7,  parallax: 3.0, wind: 3.0, damping: 45 },
+    midnight: { zenith: "#020617", horizon: "#0f172a", cloud: "#94a3b8", glow: "#38bdf8", density: 0.75, speed: 0.8,  size: 1.15, softness: 2.5,  shadow: 0.6,  cirrus: 0.6, sunX: 0.5,  sunY: 0.9,  parallax: 2.0, wind: 2.0, damping: 30 }
+  };
+  var currentTheme = SKY_THEMES.azure;
+  var onThemeChange = null;
+
+  window.setSkyTheme = function (name) {
+    if (!SKY_THEMES[name]) return;
+    currentTheme = SKY_THEMES[name];
+    document.body.style.background = currentTheme.zenith;
+    if (onThemeChange) onThemeChange(name);
+  };
+  window.__skyOnThemeChange = function (fn) { onThemeChange = fn; };
+
+  var skySelect = document.getElementById("skyThemeSelect");
+  if (skySelect) {
+    skySelect.addEventListener("change", function () { window.setSkyTheme(this.value); });
+  }
+
+  var ptr = { x: 0, y: 0, inside: false };
+  window.addEventListener("pointermove", function (e) {
+    ptr.x = (e.clientX / window.innerWidth) * 2 - 1;
+    ptr.y = 1 - (e.clientY / window.innerHeight) * 2;
+    ptr.inside = true;
+  });
+  window.addEventListener("pointerleave", function () { ptr.inside = false; });
+
+  var last = performance.now(), nearX = 0, farX = 0, cirrusX = 0, leanX = 0, leanY = 0;
+
+  function render(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    var k = 1 - Math.exp(-currentTheme.damping * 0.12 * dt);
+    leanX += ((ptr.inside ? ptr.x : 0) - leanX) * k;
+    leanY += ((ptr.inside ? ptr.y : 0) - leanY) * k;
+    var rate = currentTheme.speed * (1 + leanX * currentTheme.wind);
+    nearX = (nearX - NEAR_DRIFT * rate * dt) % 1000;
+    farX = (farX - FAR_DRIFT * rate * dt) % 1000;
+    cirrusX = (cirrusX - CIRRUS_DRIFT * rate * dt) % 1000;
+
+    var dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    var bw = Math.max(1, Math.round(window.innerWidth * dpr));
+    var bh = Math.max(1, Math.round(window.innerHeight * dpr));
+    if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
+    gl.viewport(0, 0, bw, bh);
+
+    var zen = parseColor(currentTheme.zenith, [0, 0.46, 1, 1]);
+    var hor = parseColor(currentTheme.horizon, [0.706, 0.824, 0.941, 1]);
+    var cld = parseColor(currentTheme.cloud, [1, 1, 1, 1]);
+    var glow = parseColor(currentTheme.glow, [1, 1, 1, 1]);
+
+    gl.uniform2f(u("uRes"), bw, bh);
+    gl.uniform1f(u("uNearX"), nearX);
+    gl.uniform1f(u("uFarX"), farX);
+    gl.uniform1f(u("uCirrusX"), cirrusX);
+    gl.uniform1f(u("uCoverage"), currentTheme.density);
+    gl.uniform1f(u("uSize"), currentTheme.size);
+    gl.uniform1f(u("uSoftness"), currentTheme.softness);
+    gl.uniform1f(u("uShadow"), currentTheme.shadow);
+    gl.uniform1f(u("uCirrus"), currentTheme.cirrus);
+    gl.uniform2f(u("uSun"), currentTheme.sunX, currentTheme.sunY);
+    gl.uniform2f(u("uParallax"), -leanX * currentTheme.parallax * 0.07, -leanY * currentTheme.parallax * 0.05);
+    gl.uniform3f(u("uZenith"), zen[0], zen[1], zen[2]);
+    gl.uniform3f(u("uHorizon"), hor[0], hor[1], hor[2]);
+    gl.uniform3f(u("uCloud"), cld[0], cld[1], cld[2]);
+    gl.uniform4f(u("uGlow"), glow[0], glow[1], glow[2], glow[3]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+})();
+</script>
+<!-- ============================================================
+     HERO STAGE — three.js 3D migration topology
+     ============================================================ -->
+<script type="module">
+let THREE;
+try {
+  THREE = await import("three");
+} catch (err) {
+  console.warn("KairoKube 3D stage: three.js failed to load", err);
+}
+if (THREE) {
+  try { initStage3D(THREE); } catch (err) {
+    console.warn("KairoKube 3D stage: initialization failed", err);
+    document.body.classList.add("no-webgl");
+  }
+} else {
+  document.body.classList.add("no-webgl");
+}
+
+/* Rounded-box geometry (bevelled cube) built from a subdivided BoxGeometry. */
+function roundedBoxGeometry(THREE, size, radius, segments) {
+  const geo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
+  const pos = geo.attributes.position;
+  const half = size / 2;
+  const core = Math.max(1e-4, half - radius);
+  const v = new THREE.Vector3(), inner = new THREE.Vector3(), dir = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    inner.set(
+      Math.max(-core, Math.min(core, v.x)),
+      Math.max(-core, Math.min(core, v.y)),
+      Math.max(-core, Math.min(core, v.z))
+    );
+    dir.subVectors(v, inner);
+    if (dir.lengthSq() > 1e-12) {
+      dir.normalize().multiplyScalar(radius).add(inner);
+      pos.setXYZ(i, dir.x, dir.y, dir.z);
+    }
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function glowTexture(THREE) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0.0, "rgba(255,255,255,1)");
+  g.addColorStop(0.25, "rgba(255,255,255,0.55)");
+  g.addColorStop(0.6, "rgba(255,255,255,0.12)");
+  g.addColorStop(1.0, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function labelSprite(THREE, title, sub, accent) {
+  const W = 512, H = 152;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d");
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: false, depthWrite: false
+  }));
+  spr.scale.set(2.9, 2.9 * H / W, 1);
+  spr.renderOrder = 20;
+
+  spr.userData.draw = function (t, s, a) {
+    ctx.clearRect(0, 0, W, H);
+    const x = 10, y = 12, w = W - 20, h = H - 24, r = 34;
+    roundRectPath(ctx, x, y, w, h, r);
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, "rgba(7,20,50,0.94)");
+    g.addColorStop(1, "rgba(3,10,28,0.82)");
+    ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = a; ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = a;
+    roundRectPath(ctx, x + 28, y + 34, 7, h - 68, 4); ctx.fill();
+
+    let fs = 54;
+    ctx.font = "800 " + fs + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    while (ctx.measureText(t).width > w - 96 && fs > 26) {
+      fs -= 3;
+      ctx.font = "800 " + fs + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "middle";
+    ctx.fillText(t, x + 52, y + h * 0.34);
+
+    ctx.font = "600 34px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.fillStyle = "rgba(190,218,255,0.82)";
+    ctx.fillText(s, x + 52, y + h * 0.74);
+    tex.needsUpdate = true;
+  };
+  spr.userData.draw(title, sub, accent);
+  return spr;
+}
+
+function initStage3D(THREE) {
+  const canvas = document.getElementById("stageCanvas");
+  const host = document.getElementById("overview");
+  if (!canvas || !host) return;
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: true, alpha: true, powerPreference: "high-performance"
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x061633, 0.05);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 140);
+  camera.position.set(0, 2.7, 9.6);
+  camera.lookAt(0, 0.55, 0);
+
+  const cluster = new THREE.Group();
+  scene.add(cluster);
+
+  /* ---------- environment (procedural reflections) ---------- */
+  try {
+    const ec = document.createElement("canvas");
+    ec.width = 64; ec.height = 256;
+    const ectx = ec.getContext("2d");
+    const eg = ectx.createLinearGradient(0, 0, 0, 256);
+    eg.addColorStop(0.00, "#0a1c46");
+    eg.addColorStop(0.34, "#1e4fa8");
+    eg.addColorStop(0.56, "#9ecbff");
+    eg.addColorStop(0.78, "#0b1b3d");
+    eg.addColorStop(1.00, "#020610");
+    ectx.fillStyle = eg; ectx.fillRect(0, 0, 64, 256);
+    const eqTex = new THREE.CanvasTexture(ec);
+    eqTex.mapping = THREE.EquirectangularReflectionMapping;
+    eqTex.colorSpace = THREE.SRGBColorSpace;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromEquirectangular(eqTex).texture;
+    eqTex.dispose();
+    pmrem.dispose();
+  } catch (e) { /* reflections are optional */ }
+
+  /* ---------- lights ---------- */
+  scene.add(new THREE.HemisphereLight(0xbfe4ff, 0x081428, 0.6));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+  keyLight.position.set(4.5, 7.5, 5.5);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0x7dd3fc, 1.15);
+  rimLight.position.set(-6, 3.2, -4.5);
+  scene.add(rimLight);
+
+  /* ---------- floor ---------- */
+  const floorMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uA: { value: new THREE.Color(0x22d3ee) },
+      uB: { value: new THREE.Color(0x2563eb) },
+      uFlow: { value: 0.2 }
+    },
+    vertexShader: `
+      varying vec2 vP;
+      void main(){
+        vP = position.xy;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float uTime, uFlow;
+      uniform vec3 uA, uB;
+      varying vec2 vP;
+      float gridLine(vec2 p, float scale, float w){
+        vec2 g = abs(fract(p / scale - 0.5) - 0.5) * scale;
+        vec2 d = g / max(w, 1e-4);
+        return 1.0 - min(min(d.x, d.y), 1.0);
+      }
+      void main(){
+        float r = length(vP);
+        float fade = smoothstep(30.0, 2.5, r);
+        float fine   = gridLine(vP, 1.0, 0.011);
+        float coarse = gridLine(vP, 5.0, 0.019);
+        float rings = 0.0;
+        for (int i = 0; i < 3; i++){
+          float ph = fract(uTime * 0.11 + float(i) / 3.0);
+          rings += smoothstep(1.0, 0.0, abs(r - ph * 26.0)) * (1.0 - ph);
+        }
+        vec3 col = mix(uB, uA, fine * 0.75 + coarse * 0.25);
+        float a = (fine * 0.26 + coarse * 0.5 + rings * 0.55 * uFlow) * fade;
+        gl_FragColor = vec4(col * (0.75 + rings * 1.4), a);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(64, 64), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+
+  /* ---------- node factory ---------- */
+  const palette = {
+    src: { color: 0x10b981, accent: 0x6ee7b7 },
+    brk: { color: 0xf59e0b, accent: 0xfcd34d },
+    tgt: { color: 0x3b82f6, accent: 0x93c5fd }
+  };
+
+  function makeNode(kind, x, title, sub) {
+    const p = palette[kind];
+    const g = new THREE.Group();
+    const size = 1.5;
+
+    const body = new THREE.Mesh(
+      roundedBoxGeometry(THREE, size, 0.3, 7),
+      new THREE.MeshPhysicalMaterial({
+        color: p.color,
+        metalness: 0.55,
+        roughness: 0.17,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.12,
+        iridescence: 0.4,
+        iridescenceIOR: 1.32,
+        iridescenceThicknessRange: [120, 620],
+        envMapIntensity: 1.35,
+        emissive: p.color,
+        emissiveIntensity: 0.14
+      })
+    );
+    g.add(body);
+
+    // real 3D glowing edge bars
+    const edgeGeo = new THREE.BoxGeometry(size + 0.05, 0.028, 0.028);
+    const edgeMat = new THREE.MeshBasicMaterial({
+      color: p.accent, transparent: true, opacity: 0.92,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const h = size / 2 + 0.014;
+    for (const a of [h, -h]) for (const b of [h, -h]) {
+      const e1 = new THREE.Mesh(edgeGeo, edgeMat);
+      e1.position.set(0, a, b); g.add(e1);
+      const e2 = new THREE.Mesh(edgeGeo, edgeMat);
+      e2.position.set(a, 0, b); e2.rotation.z = Math.PI / 2; g.add(e2);
+      const e3 = new THREE.Mesh(edgeGeo, edgeMat);
+      e3.position.set(a, b, 0); e3.rotation.y = Math.PI / 2; g.add(e3);
+    }
+
+    // holographic wire shell
+    const shell = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(size * 0.84, 1),
+      new THREE.MeshBasicMaterial({
+        color: p.accent, wireframe: true, transparent: true, opacity: 0.16,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    g.add(shell);
+
+    // soft glow sprite + local light
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(THREE), color: p.accent, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    glow.scale.set(4.6, 4.6, 1);
+    g.add(glow);
+
+    const light = new THREE.PointLight(p.accent, 5.5, 9, 2);
+    g.add(light);
+
+    const label = labelSprite(THREE, title, sub, "#" + p.accent.toString(16).padStart(6, "0"));
+    label.position.set(0, size * 0.92, 0);
+    g.add(label);
+
+    g.position.set(x, 1.0, 0);
+    cluster.add(g);
+    return { group: g, body, shell, glow, light, edgeMat, label, size, baseY: 1.0 };
+  }
+
+  const nodeSrc = makeNode("src", -2.85, "source pod", "checkpoint origin");
+  const nodeBrk = makeNode("brk", 0, "broker", "message queue");
+  const nodeTgt = makeNode("tgt", 2.85, "target node", "restore target");
+
+  /* ---------- replay conduits ---------- */
+  function buildConduit(from, to, color, speed) {
+    const a = from.group.position.clone();
+    const b = to.group.position.clone();
+    const p1 = new THREE.Vector3().lerpVectors(a, b, 0.32).setY(a.y + 0.55);
+    const p2 = new THREE.Vector3().lerpVectors(a, b, 0.68).setY(b.y + 0.55);
+    const curve = new THREE.CatmullRomCurve3([a, p1, p2, b], false, "catmullrom", 0.4);
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }, uColor: { value: new THREE.Color(color) },
+        uSpeed: { value: speed }, uFlow: { value: 0.3 }
+      },
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: `
+        uniform float uTime, uSpeed, uFlow;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main(){
+          float f = fract(vUv.x * 3.0 - uTime * uSpeed);
+          float dash = smoothstep(0.0, 0.16, f) * smoothstep(0.6, 0.32, f);
+          float a = 0.07 + dash * uFlow;
+          gl_FragColor = vec4(uColor * (0.7 + dash * 2.4), a);
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 180, 0.021, 8, false), mat);
+    scene.add(tube);
+
+    const halo = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 90, 0.075, 8, false),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.055,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    scene.add(halo);
+
+    // travelling data shards
+    const COUNT = 26;
+    const shards = new THREE.InstancedMesh(
+      new THREE.OctahedronGeometry(0.15, 0),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.95,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }),
+      COUNT
+    );
+    shards.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    shards.frustumCulled = false;
+    const c = new THREE.Color(0xffffff);
+    for (let i = 0; i < COUNT; i++) {
+      shards.setColorAt(i, c.lerp(new THREE.Color(color), 0.35 + Math.random() * 0.6));
+    }
+    if (shards.instanceColor) shards.instanceColor.needsUpdate = true;
+    scene.add(shards);
+
+    const dummy = new THREE.Object3D();
+    const offsets = [];
+    for (let i = 0; i < COUNT; i++) offsets.push(i / COUNT);
+
+    return {
+      curve, mat, offsets, shards, dummy,
+      update(t, speed, intensity) {
+        for (let i = 0; i < COUNT; i++) {
+          let u = (t * speed + offsets[i]) % 1;
+          if (u < 0) u += 1;
+          const pt = curve.getPointAt(u);
+          const tan = curve.getTangentAt(u);
+          dummy.position.copy(pt);
+          dummy.lookAt(pt.clone().add(tan));
+          const s = (0.65 + 0.45 * Math.sin(t * 7 + i * 1.7)) * (0.55 + intensity * 0.85);
+          dummy.scale.setScalar(s);
+          dummy.updateMatrix();
+          shards.setMatrixAt(i, dummy.matrix);
+        }
+        shards.instanceMatrix.needsUpdate = true;
+      }
+    };
+  }
+
+  const conduitSrc = buildConduit(nodeSrc, nodeBrk, 0x6ee7b7, 0.16);
+  const conduitTgt = buildConduit(nodeBrk, nodeTgt, 0x93c5fd, 0.22);
+
+  /* ---------- ambient particles ---------- */
+  const PCOUNT = 520;
+  const pPos = new Float32Array(PCOUNT * 3);
+  const pSize = new Float32Array(PCOUNT);
+  const pPhase = new Float32Array(PCOUNT);
+  for (let i = 0; i < PCOUNT; i++) {
+    pPos[i * 3 + 0] = (Math.random() - 0.5) * 26;
+    pPos[i * 3 + 1] = Math.random() * 10;
+    pPos[i * 3 + 2] = (Math.random() - 0.5) * 16 - 2;
+    pSize[i] = 0.6 + Math.random() * 2.4;
+    pPhase[i] = Math.random() * Math.PI * 2;
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
+  pGeo.setAttribute("aSize", new THREE.BufferAttribute(pSize, 1));
+  pGeo.setAttribute("aPhase", new THREE.BufferAttribute(pPhase, 1));
+  const dust = new THREE.Points(pGeo, new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uDpr: { value: renderer.getPixelRatio() },
+      uColor: { value: new THREE.Color(0xbfe6ff) }
+    },
+    vertexShader: `
+      attribute float aSize; attribute float aPhase;
+      uniform float uTime, uDpr;
+      varying float vA;
+      void main(){
+        vec3 p = position;
+        p.y = mod(p.y + uTime * aSize * 0.16, 10.0);
+        p.x += sin(uTime * 0.25 + aPhase) * 0.5;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aSize * uDpr * (150.0 / max(-mv.z, 0.1));
+        vA = smoothstep(10.0, 1.5, p.y) * 0.6;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor; varying float vA;
+      void main(){
+        float a = smoothstep(0.5, 0.0, length(gl_PointCoord - 0.5));
+        gl_FragColor = vec4(uColor, a * vA);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  }));
+  scene.add(dust);
+
+  /* ---------- telemetry state ---------- */
+  const telemetry = {
+    active: false, failed: false, intensity: 0.22,
+    labels: {
+      src: ["source pod", "checkpoint origin"],
+      brk: ["broker", "message queue"],
+      tgt: ["target node", "restore target"]
+    },
+    hues: {
+      src: ["#6ee7b7", 0x10b981],
+      brk: ["#fcd34d", 0xf59e0b],
+      tgt: ["#93c5fd", 0x3b82f6]
+    }
+  };
+
+  function recolorNode(node, kind) {
+    const [accentHex, colorHex] = telemetry.hues[kind];
+    const accent = new THREE.Color(accentHex);
+    node.edgeMat.color.copy(accent);
+    node.shell.material.color.copy(accent);
+    node.glow.material.color.copy(accent);
+    node.light.color.copy(accent);
+    node.body.material.color.setHex(colorHex);
+    node.body.material.emissive.setHex(colorHex);
+  }
+
+  window.stage3d = {
+    setTelemetry(next) {
+      Object.assign(telemetry, next || {});
+      if (telemetry.labels.src) nodeSrc.label.userData.draw(telemetry.labels.src[0], telemetry.labels.src[1], telemetry.hues.src[0]);
+      if (telemetry.labels.brk) nodeBrk.label.userData.draw(telemetry.labels.brk[0], telemetry.labels.brk[1], telemetry.hues.brk[0]);
+      if (telemetry.labels.tgt) nodeTgt.label.userData.draw(telemetry.labels.tgt[0], telemetry.labels.tgt[1], telemetry.hues.tgt[0]);
+      const srcKind = telemetry.failed ? "brk" : "src";
+      recolorNode(nodeSrc, telemetry.failed ? "brk" : "src");
+      recolorNode(nodeBrk, telemetry.failed ? "tgt" : "brk");
+      recolorNode(nodeTgt, telemetry.failed ? "brk" : "tgt");
+      if (srcKind) { /* keep parity */ }
+    },
+    setTheme(name) {
+      const fog = {
+        azure: 0x08213f, sunset: 0x2c1030, twilight: 0x0a1836, midnight: 0x03070f
+      }[name];
+      if (fog !== undefined) scene.fog.color.setHex(fog);
+    }
+  };
+
+  if (window.__skyOnThemeChange) window.__skyOnThemeChange(window.stage3d.setTheme);
+
+  /* ---------- layout + interaction ---------- */
+  const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
+  window.addEventListener("pointermove", (e) => {
+    pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.ty = (e.clientY / window.innerHeight) * 2 - 1;
+  }, { passive: true });
+
+  /* Centre the topology on the right-hand stage column. The column is measured
+     from the DOM and converted to world units at the cluster's depth, so the
+     cube stays centred in its column at every viewport width. */
+  const anchor = document.getElementById("stageAnchor");
+  function layout() {
+    const w = host.clientWidth || 1;
+    const h = host.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.position.z = w > 1080 ? 9.6 : (w > 700 ? 10.6 : 11.6);
+    camera.updateProjectionMatrix();
+
+    // World height visible at the cluster's depth, from the camera's FOV.
+    const dist = camera.position.z;
+    const viewH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const viewW = viewH * camera.aspect;
+    if (anchor && anchor.offsetWidth > 0) {
+      const hostRect = host.getBoundingClientRect();
+      const aRect = anchor.getBoundingClientRect();
+      // Normalised centre of the anchor inside the canvas, -0.5..0.5 each way.
+      const cx = (aRect.left + aRect.width / 2 - hostRect.left) / w - 0.5;
+      cluster.position.x = cx * viewW;
+    } else {
+      cluster.position.x = 0;
+    }
+  }
+  layout();
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(host);
+  window.addEventListener("resize", layout);
+
+  let visible = true;
+  if (window.IntersectionObserver) {
+    new IntersectionObserver((entries) => { visible = entries[0].isIntersecting; }, { threshold: 0.02 })
+      .observe(host);
+  }
+  document.addEventListener("visibilitychange", () => { visible = !document.hidden; });
+
+  /* ---------- render loop ---------- */
+  const clock = new THREE.Clock();
+  let t = 0;
+  const nodes = [nodeSrc, nodeBrk, nodeTgt];
+
+  function frame() {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.05, clock.getDelta());
+    if (!visible) return;
+    t += reduced ? dt * 0.25 : dt;
+
+    const flow = telemetry.active ? 1 : 0.28;
+    const target = telemetry.active ? 0.95 : 0.22;
+    telemetry.intensity += (target - telemetry.intensity) * Math.min(1, dt * 2.2);
+
+    floorMat.uniforms.uTime.value = t;
+    floorMat.uniforms.uFlow.value = 0.25 + telemetry.intensity * 0.9;
+    dust.material.uniforms.uTime.value = t;
+
+    conduitSrc.mat.uniforms.uTime.value = t;
+    conduitTgt.mat.uniforms.uTime.value = t;
+    conduitSrc.mat.uniforms.uFlow.value = 0.25 + telemetry.intensity * 0.8;
+    conduitTgt.mat.uniforms.uFlow.value = 0.25 + telemetry.intensity * 0.8;
+    conduitSrc.update(t, 0.14 + telemetry.intensity * 0.5, telemetry.intensity);
+    conduitTgt.update(t, 0.2 + telemetry.intensity * 0.7, telemetry.intensity);
+
+    nodes.forEach((n, i) => {
+      const bob = telemetry.active ? 0.14 : 0.08;
+      n.group.position.y = n.baseY + Math.sin(t * (0.9 + i * 0.22) + i * 1.9) * bob;
+      n.group.rotation.y += dt * (0.18 + telemetry.intensity * 0.5) * (i === 1 ? 1.6 : 1);
+      n.group.rotation.x = Math.sin(t * 0.5 + i) * 0.05;
+      n.shell.rotation.y -= dt * 0.35;
+      n.shell.rotation.z += dt * 0.12;
+      const pulse = 0.42 + telemetry.intensity * 0.35 + Math.sin(t * 3 + i) * 0.05;
+      n.glow.material.opacity = pulse;
+      n.light.intensity = 4 + telemetry.intensity * 7;
+      const scale = telemetry.active ? 1 + Math.sin(t * 4 + i) * 0.02 : 1;
+      n.body.scale.setScalar(scale);
+    });
+
+    // camera parallax
+    pointer.x += (pointer.tx - pointer.x) * Math.min(1, dt * 2.5);
+    pointer.y += (pointer.ty - pointer.y) * Math.min(1, dt * 2.5);
+    const radius = camera.position.z;
+    const angle = t * 0.045 + pointer.x * 0.32;
+    camera.position.x = Math.sin(angle) * radius * 0.16 + pointer.x * 0.5;
+    camera.position.y = 2.7 - pointer.y * 0.85 + Math.sin(t * 0.3) * 0.12;
+    camera.lookAt(cluster.position.x * 0.55, 0.6, 0);
+
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(frame);
+}
+</script>
+<script>
+/* Fallback: if the module never ran, show the CSS cubes. */
+setTimeout(function () {
+  if (!document.body.classList.contains("no-webgl") && !window.stage3d) {
+    document.body.classList.add("no-webgl");
+  }
+}, 3500);
+</script>
+<script>
+"use strict";
+/* ============================================================
+   DASHBOARD CONTROLLER
+   ============================================================ */
 function esc(v) {
   return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
   });
 }
-function secs(ns) { return ns ? (ns / 1e9).toFixed(2) : "–"; }
-
-// Parses Prometheus text into a name -> value map (comment lines are skipped).
+function secs(ns) { return ns ? (Number(ns) / 1e9).toFixed(2) + "s" : "–"; }
+function fmtBytes(n) {
+  n = Number(n || 0);
+  if (n < 1024) return n.toFixed(0) + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB";
+  return (n / 1073741824).toFixed(2) + " GB";
+}
 function parseMetrics(text) {
   var out = {};
   text.split("\n").forEach(function (line) {
@@ -189,144 +1971,562 @@ function parseMetrics(text) {
   });
   return out;
 }
-function setFlash(msg, isErr) {
-  var el = document.getElementById("flash");
+function $(id) { return document.getElementById(id); }
+
+/* ---------- audio ---------- */
+var audioCtx = null, audioEnabled = true;
+function playSound(type) {
+  if (!audioEnabled) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    var osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    var now = audioCtx.currentTime;
+    if (type === "click") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.04);
+      gain.gain.setValueAtTime(0.035, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+      osc.start(now); osc.stop(now + 0.04);
+    } else if (type === "start") {
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
+      gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc.start(now); osc.stop(now + 0.1);
+    } else if (type === "done") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.07);
+      gain.gain.setValueAtTime(0.045, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc.start(now); osc.stop(now + 0.18);
+    } else if (type === "alert") {
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220, now);
+      gain.gain.setValueAtTime(0.04, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+      osc.start(now); osc.stop(now + 0.09);
+    }
+  } catch (e) {}
+}
+$("audioToggleBtn").addEventListener("click", function () {
+  audioEnabled = !audioEnabled;
+  $("audioIcon").textContent = audioEnabled ? "🔊" : "🔇";
+  toast(audioEnabled ? "Audio feedback enabled" : "Audio muted", "ok");
+  if (audioEnabled) playSound("click");
+});
+
+/* ---------- toasts + log ---------- */
+function toast(msg, kind) {
+  var host = $("toasts");
+  var el = document.createElement("div");
+  el.className = "toast " + (kind || "");
   el.textContent = msg;
-  el.className = "flash" + (isErr ? " err" : "");
+  host.appendChild(el);
+  setTimeout(function () {
+    el.classList.add("out");
+    setTimeout(function () { el.remove(); }, 380);
+  }, 3800);
+}
+function logEvent(tag, msg, kind) {
+  var body = $("consoleBody");
+  var d = new Date().toTimeString().split(" ")[0];
+  var div = document.createElement("div");
+  div.className = "log-line";
+  div.innerHTML = '<span class="log-time">[' + d + ']</span><span class="log-tag ' + (kind || "") + '">[' + esc(tag) + ']</span><span>' + esc(msg) + '</span>';
+  body.appendChild(div);
+  while (body.children.length > 220) body.removeChild(body.firstChild);
+  body.scrollTop = body.scrollHeight;
+}
+$("clearLogBtn").addEventListener("click", function () {
+  $("consoleBody").innerHTML = "";
+  logEvent("CLEARED", "Telemetry event console cleared", "");
+});
+
+/* ---------- nav ---------- */
+var navLinks = $("navLinks");
+$("navToggle").addEventListener("click", function () {
+  var open = navLinks.classList.toggle("open");
+  this.setAttribute("aria-expanded", open ? "true" : "false");
+});
+navLinks.addEventListener("click", function (e) {
+  if (e.target.tagName === "A") navLinks.classList.remove("open");
+});
+window.addEventListener("scroll", function () {
+  $("siteNav").classList.toggle("scrolled", window.scrollY > 12);
+}, { passive: true });
+
+if (window.IntersectionObserver) {
+  var links = Array.prototype.slice.call(navLinks.querySelectorAll("a"));
+  var spy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      links.forEach(function (a) {
+        a.classList.toggle("active", a.getAttribute("href") === "#" + en.target.id);
+      });
+    });
+  }, { rootMargin: "-45% 0px -50% 0px" });
+  ["overview", "metrics", "pipeline", "migrations", "telemetry"].forEach(function (id) {
+    var el = $(id);
+    if (el) spy.observe(el);
+  });
+
+  var revealObs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add("in"); revealObs.unobserve(en.target); }
+    });
+  }, { threshold: 0.08 });
+  document.querySelectorAll(".reveal").forEach(function (el) { revealObs.observe(el); });
+} else {
+  document.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("in"); });
 }
 
-// Decorative star field, generated once at load.
-(function buildStars() {
-  var host = document.getElementById("stars");
-  for (var i = 0; i < 70; i++) {
-    var s = document.createElement("span");
-    s.style.left = Math.random() * 100 + "%";
-    s.style.top = Math.random() * 100 + "%";
-    s.style.animationDelay = (Math.random() * 3).toFixed(2) + "s";
-    s.style.transform = "scale(" + (0.5 + Math.random() * 1.5).toFixed(2) + ")";
-    host.appendChild(s);
+/* card pointer glow */
+document.addEventListener("pointermove", function (ev) {
+  var c = ev.target.closest && ev.target.closest(".card");
+  if (!c) return;
+  var r = c.getBoundingClientRect();
+  c.style.setProperty("--mx", (ev.clientX - r.left) + "px");
+  c.style.setProperty("--my", (ev.clientY - r.top) + "px");
+});
+
+/* ---------- counters ---------- */
+var counters = new WeakMap();
+function animateNumber(el, to, decimals) {
+  if (!el) return;
+  var from = counters.has(el) ? counters.get(el) : 0;
+  counters.set(el, to);
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    el.textContent = Number(to).toFixed(decimals || 0); return;
   }
-})();
-
-function card(label, value, pct) {
-  var bar = pct == null ? "" : '<div class="bar"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>';
-  return '<div class="card"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + "</div>" + bar + "</div>";
+  var start = performance.now(), dur = 700;
+  function step(now) {
+    var t = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - t, 3);
+    el.textContent = (from + (to - from) * e).toFixed(decimals || 0);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
+function card(label, value, decimals, pct, subtext, icon) {
+  var meter = pct == null ? "" : '<div class="meter"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>';
+  return '<div class="card">' +
+    '<div class="card-top"><span class="label">' + esc(label) + '</span><span class="card-icon">' + (icon || "✦") + '</span></div>' +
+    '<div class="value">' + (decimals === 3 ? fmtBytes(value) : Number(value).toFixed(decimals || 0)) + '</div>' +
+    (subtext ? '<div class="subtext">' + esc(subtext) + '</div>' : '') +
+    meter + '</div>';
+}
+
+/* ---------- phases ---------- */
+var PHASES = ["PREPARING", "CHECKPOINTING", "CHECKPOINT_CREATED", "TRANSFERRING", "RESTORING", "REPLAYING", "CUTOFF", "FINALIZING", "COMPLETED"];
 var TERMINAL = { COMPLETED: 1, FAILED: 1, SOURCE_RESTORED: 1 };
-var ORDER = ["PREPARING", "CHECKPOINTING", "CHECKPOINT_CREATED", "TRANSFERRING", "RESTORING", "REPLAYING", "CUTOFF", "FINALIZING", "COMPLETED"];
-function progressPct(state) {
-  var i = ORDER.indexOf(state);
-  return i < 0 ? 0 : Math.round(((i + 1) / ORDER.length) * 100);
-}
+
 function stateClass(st) {
   if (st === "COMPLETED") return "ok";
   if (st === "FAILED" || st === "SOURCE_RESTORED" || st === "ROLLING_BACK") return "bad";
   return "run";
 }
+function renderFlow(state) {
+  var idx = PHASES.indexOf(state);
+  var isFailed = state === "FAILED" || state === "ROLLING_BACK" || state === "SOURCE_RESTORED";
+  $("flow").innerHTML = PHASES.map(function (p, i) {
+    var cls = "";
+    if (isFailed && i === idx) cls = "fail";
+    else if (idx >= 0 && (i < idx || state === "COMPLETED")) cls = "done";
+    else if (i === idx) cls = "now";
+    return '<span class="step ' + cls + '">' + p.replace(/_/g, " ").toLowerCase() + '</span>';
+  }).join('<span class="arrow">›</span>');
+}
 
+/* ---------- sparklines ---------- */
+var queueHistory = [], lambdaHistory = [], muHistory = [], maxPoints = 26;
+function updateSparklines(metrics) {
+  var q = Number(metrics.queue_depth || 0);
+  var lam = Number(metrics.message_arrival_rate || 0);
+  var mu = Number(metrics.message_processing_rate || 0);
 
-// Pulls /migrations and /metrics and redraws the cards and the table.
-async function refresh() {
-  var link = document.getElementById("link");
-  try {
-    var r1 = await fetch("/migrations"), r2 = await fetch("/metrics");
-    if (!r1.ok || !r2.ok) throw new Error("HTTP " + r1.status + "/" + r2.status);
-    var migs = await r1.json();
-    var m = parseMetrics(await r2.text());
+  queueHistory.push(q); if (queueHistory.length > maxPoints) queueHistory.shift();
+  lambdaHistory.push(lam); if (lambdaHistory.length > maxPoints) lambdaHistory.shift();
+  muHistory.push(mu); if (muHistory.length > maxPoints) muHistory.shift();
 
-    var total = m.migration_total || 0, ok = m.migration_success_total || 0;
-    document.getElementById("cards").innerHTML =
-      card("Attempts", total) +
-      card("Succeeded", ok, total ? (100 * ok) / total : 0) +
-      card("Failed", m.migration_failure_total || 0) +
-      card("Arrival λ (msg/s)", (m.message_arrival_rate || 0).toFixed(2)) +
-      card("Processing μ (msg/s)", (m.message_processing_rate || 0).toFixed(2)) +
-      card("Queue depth", m.queue_depth || 0) +
-      card("Last downtime (s)", (m.migration_downtime_seconds || 0).toFixed(3)) +
-      card("Checkpoint (bytes)", m.checkpoint_size_bytes || 0);
+  $("chartQueueVal").textContent = q.toLocaleString() + " msgs";
+  $("chartFlowVal").textContent = "λ: " + lam.toFixed(1) + " | μ: " + mu.toFixed(1) + " msg/s";
 
-    var rows = (migs || []).slice().reverse().map(function (x) {
-      var st = x.state, active = !TERMINAL[st];
-      var pct = active ? progressPct(st) : (st === "COMPLETED" ? 100 : 100);
-      var cancel = active
-        ? '<button class="small danger" data-cancel="' + esc(x.migration_id) + '">Cancel</button>'
-        : '<span class="muted">—</span>';
-      return "<tr>" +
-        "<td>" + esc(x.migration_id) + "</td>" +
-        "<td>" + esc(x.namespace) + "/" + esc(x.source_pod) + "</td>" +
-        "<td>" + esc(x.target_node) + "</td>" +
-        '<td><div class="prog' + (active ? " running" : "") + '"><i style="width:' + pct + '%"></i></div></td>' +
-        '<td><span class="state ' + stateClass(st) + '">' + esc(st) + "</span></td>" +
-        "<td>" + secs(x.downtime) + "</td>" +
-        "<td>" + secs(x.calculated_cutoff) + "</td>" +
-        "<td>" + Number(x.arrival_rate_lambda || 0).toFixed(2) + "</td>" +
-        "<td>" + Number(x.target_processing_rate_mu || 0).toFixed(2) + "</td>" +
-        '<td class="muted">' + esc(x.error_reason || "") + "</td>" +
-        "<td>" + cancel + "</td>" +
-        "</tr>";
-    }).join("");
-    document.getElementById("rows").innerHTML =
-      rows || '<tr><td colspan="11" class="muted">No migrations yet.</td></tr>';
+  function makePath(data, maxVal) {
+    if (data.length < 2) return { line: "", area: "" };
+    var w = 300, h = 74, pad = 6;
+    var max = Math.max(maxVal || 1, Math.max.apply(null, data));
+    var pts = data.map(function (val, idx) {
+      var x = (idx / (data.length - 1)) * w;
+      var y = h - ((val / max) * (h - pad * 2)) - pad;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    });
+    var line = "M " + pts.join(" L ");
+    return { line: line, area: line + " L " + w + "," + h + " L 0," + h + " Z" };
+  }
+  var pQ = makePath(queueHistory, 10);
+  $("sparkQueueLine").setAttribute("d", pQ.line);
+  $("sparkQueueArea").setAttribute("d", pQ.area);
+  var maxFlow = Math.max(10, Math.max.apply(null, lambdaHistory.concat(muHistory)));
+  $("sparkLambdaLine").setAttribute("d", makePath(lambdaHistory, maxFlow).line);
+  $("sparkMuLine").setAttribute("d", makePath(muHistory, maxFlow).line);
+}
 
-    link.textContent = "live";
-    link.className = "pill live";
-  } catch (err) {
-    link.textContent = "offline";
-    link.className = "pill error";
-    setFlash("Cannot reach the manager: " + err.message, true);
+function latestActive(list) {
+  return list.filter(function (m) { return !TERMINAL[m.state]; })
+             .sort(function (a, b) { return String(b.updated_at).localeCompare(String(a.updated_at)); })[0] || list[0];
+}
+
+/* ---------- 3D stage + hero telemetry ---------- */
+function renderStage(m, metrics) {
+  var active = !!(m && !TERMINAL[m.state]);
+  var failed = !!(m && (m.state === "FAILED" || m.state === "ROLLING_BACK" || m.state === "SOURCE_RESTORED"));
+  var lam = Number(m ? m.arrival_rate_lambda : (metrics.message_arrival_rate || 0));
+  var mu = Number(m ? m.target_processing_rate_mu : (metrics.message_processing_rate || 0));
+  var rho = mu > 0 ? (lam / mu) * 100 : 0;
+
+  if (window.stage3d) {
+    window.stage3d.setTelemetry({
+      active: active, failed: failed,
+      labels: {
+        src: [m && m.source_pod ? m.source_pod : "source pod", "checkpoint origin"],
+        brk: ["broker", metrics.queue_name || "message queue"],
+        tgt: [m && m.target_node ? m.target_node : "target node", "restore target"]
+      }
+    });
+  }
+
+  $("hudMode").textContent = active
+    ? (m.state || "").replace(/_/g, " ").toLowerCase() + " · live"
+    : (m ? "standby · last run " + String(m.state).replace(/_/g, " ").toLowerCase() : "idle · awaiting dispatch");
+
+  $("signalPhase").textContent = m ? String(m.state).replace(/_/g, " ") : "IDLE";
+  $("signalQueue").textContent = Number(metrics.queue_depth || 0).toLocaleString() + " msgs";
+  $("signalFlow").textContent = lam.toFixed(1) + " / " + mu.toFixed(1) + " msg/s";
+  $("signalUtil").textContent = rho.toFixed(1) + "% · " + (rho > 90 ? "Saturated" : "Feasible");
+
+  $("tickPhase").textContent = m ? String(m.state).replace(/_/g, " ") : "IDLE";
+  $("tickQueue").textContent = Number(metrics.queue_depth || 0).toLocaleString();
+  $("tickLambda").textContent = Number(metrics.message_arrival_rate || 0).toFixed(1);
+  $("tickMu").textContent = Number(metrics.message_processing_rate || 0).toFixed(1);
+  $("tickUtil").textContent = rho.toFixed(1) + "%";
+  $("tickDone").textContent = Number(metrics.migration_success_total || 0).toLocaleString();
+  $("tickReplay").textContent = Number(metrics.messages_replayed_total || 0).toLocaleString();
+
+  $("durCp").textContent = m ? secs(m.checkpoint_duration) : "–";
+  $("durTransfer").textContent = m ? secs(m.transfer_duration) : "–";
+  $("durReplay").textContent = m ? secs(m.replay_duration) : "–";
+  $("durRestore").textContent = m ? secs(m.downtime) : "–";
+
+  var heroBadge = $("heroBadge");
+  var flightBox = $("activeFlightBox");
+  if (active) {
+    heroBadge.textContent = "Handoff in progress · " + m.state;
+    heroBadge.style.color = "var(--cyan)";
+    flightBox.classList.add("show");
+    $("flightPod").textContent = (m.namespace ? m.namespace + "/" : "") + m.source_pod;
+    $("flightTarget").textContent = m.target_node;
+    $("heroCancelBtn").dataset.cancel = m.migration_id;
+    $("flightCutoff").textContent = secs(m.calculated_cutoff);
+    $("flightLambda").textContent = Number(m.arrival_rate_lambda || 0).toFixed(1) + " msg/s";
+    $("flightReplayed").textContent = Number(m.messages_replayed || 0).toLocaleString() + " msgs";
+    if (m.start_time) {
+      var elSec = Math.max(0, (Date.now() - new Date(m.start_time).getTime()) / 1000);
+      $("flightElapsed").textContent = elSec.toFixed(1) + "s";
+    }
+  } else {
+    heroBadge.textContent = failed ? "Handoff failed · rollback" : (m ? "Fleet steady · run complete" : "Fleet steady · zero in flight");
+    heroBadge.style.color = "var(--muted)";
+    flightBox.classList.remove("show");
   }
 }
 
-// Start form: POST /migrations. Shows the server's message on failure.
-document.getElementById("startForm").addEventListener("submit", async function (ev) {
-  ev.preventDefault();
-  var f = ev.target, btn = document.getElementById("startBtn");
-  var body = {
-    source_pod: f.source_pod.value.trim(),
-    namespace: f.namespace.value.trim() || "default",
-    target_node: f.target_node.value.trim()
-  };
-  btn.disabled = true;
+/* ---------- cards ---------- */
+function renderCards(metrics) {
+  var total = Number(metrics.migration_total || 0);
+  var success = Number(metrics.migration_success_total || 0);
+  var failures = Number(metrics.migration_failure_total || 0);
+  var rate = total ? (success / total) * 100 : 0;
+  var q = Number(metrics.queue_depth || 0);
+  var cpSize = Number(metrics.checkpoint_size_bytes || 0);
+  var repl = Number(metrics.messages_replayed_total || 0);
+  var dt = Number(metrics.migration_downtime_seconds || 0);
+
+  var values = [
+    ["Migrations", total, 0, null, success + " ok · " + failures + " failed", "⚡"],
+    ["Success rate", rate, 1, rate, "Fleet completion benchmark", "🎯"],
+    ["Queue depth", q, 0, null, q > 100 ? "High backlog" : "Normal depth", "📬"],
+    ["Checkpoint size", cpSize, 3, null, "CRIU memory state payload", "💾"],
+    ["Messages replayed", repl, 0, null, "Reconstructed state events", "🔄"],
+    ["Latest downtime", dt, 2, null, "Target SLA < 500ms", "⏱"]
+  ];
+  $("cards").innerHTML = values.map(function (v) {
+    return card(v[0], v[1], v[2], v[3], v[4], v[5]);
+  }).join("");
+
+  $("statMigrations").textContent = total.toLocaleString();
+  $("statQueue").textContent = q.toLocaleString();
+}
+
+/* ---------- table ---------- */
+var currentFilter = "all", currentSearch = "", lastMigrations = [];
+function matchesFilter(m) {
+  if (currentFilter === "active" && TERMINAL[m.state]) return false;
+  if (currentFilter === "completed" && m.state !== "COMPLETED") return false;
+  if (currentFilter === "failed" && m.state !== "FAILED" && m.state !== "SOURCE_RESTORED" && m.state !== "ROLLING_BACK") return false;
+  if (currentSearch) {
+    var s = currentSearch.toLowerCase();
+    var match = (m.migration_id && m.migration_id.toLowerCase().indexOf(s) > -1) ||
+                (m.source_pod && m.source_pod.toLowerCase().indexOf(s) > -1) ||
+                (m.target_node && m.target_node.toLowerCase().indexOf(s) > -1) ||
+                (m.namespace && m.namespace.toLowerCase().indexOf(s) > -1) ||
+                (m.state && m.state.toLowerCase().indexOf(s) > -1);
+    if (!match) return false;
+  }
+  return true;
+}
+function renderRows(list) {
+  var rows = $("rows");
+  var filtered = list.filter(matchesFilter);
+  if (!filtered.length) {
+    rows.innerHTML = '<tr><td colspan="9" class="empty"><div class="orbit"></div>' +
+      (list.length ? "No migrations match your search criteria." : "No migrations yet. Start a handoff above.") +
+      '</td></tr>';
+    return;
+  }
+  rows.innerHTML = filtered.slice().reverse().map(function (m) {
+    var pct = m.state === "COMPLETED" ? 100 : Math.max(5, Math.round(((PHASES.indexOf(m.state) + 1) / PHASES.length) * 100));
+    var nsPrefix = m.namespace ? '<span class="ns-tag">' + esc(m.namespace) + '</span>' : '';
+    var cancelBtn = TERMINAL[m.state] ? '' : '<button class="btn-mini danger" data-cancel="' + esc(m.migration_id) + '">Cancel</button>';
+    var inspectBtn = '<button class="btn-mini" data-inspect="' + esc(m.migration_id) + '" style="margin-right:0.35rem">Inspect</button>';
+    return '<tr data-row-id="' + esc(m.migration_id) + '">' +
+      '<td class="mig-id">' + esc(m.migration_id) + '</td>' +
+      '<td class="route">' + nsPrefix + esc(m.source_pod) + '<span class="arr">➔</span>' + esc(m.target_node) + '</td>' +
+      '<td><div class="prog ' + stateClass(m.state) + '"><i style="width:' + pct + '%"></i></div></td>' +
+      '<td><span class="state ' + stateClass(m.state) + '">' + esc(String(m.state).replace(/_/g, " ")) + '</span></td>' +
+      '<td>' + secs(m.downtime) + '</td>' +
+      '<td>' + secs(m.calculated_cutoff) + '</td>' +
+      '<td>' + Number(m.arrival_rate_lambda || 0).toFixed(1) + ' / ' + Number(m.target_processing_rate_mu || 0).toFixed(1) + '</td>' +
+      '<td class="muted">' + esc(m.error_reason || m.rollback_reason || "–") + '</td>' +
+      '<td style="text-align:right">' + inspectBtn + cancelBtn + '</td>' +
+      '</tr>';
+  }).join("");
+}
+
+/* ---------- inspector ---------- */
+function openInspector(id) {
+  var m = lastMigrations.find(function (item) { return item.migration_id === id; });
+  if (!m) return;
+  playSound("click");
+  $("modalId").textContent = m.migration_id;
+  $("mPod").textContent = m.source_pod || "–";
+  $("mNs").textContent = m.namespace || "default";
+  $("mNode").textContent = m.target_node || "–";
+  $("mMode").textContent = m.mode || "MS2M";
+  $("mState").textContent = m.state || "–";
+  $("mDurCp").textContent = secs(m.checkpoint_duration);
+  $("mDurTr").textContent = secs(m.transfer_duration);
+  $("mDurRest").textContent = secs(m.restore_duration);
+  $("mDurRepl").textContent = secs(m.replay_duration);
+  $("mDowntime").textContent = secs(m.downtime);
+  $("mLambda").textContent = Number(m.arrival_rate_lambda || 0).toFixed(2) + " msg/s";
+  $("mMu").textContent = Number(m.target_processing_rate_mu || 0).toFixed(2) + " msg/s";
+  $("mUtil").textContent = (Number(m.utilization || 0) * 100).toFixed(1) + "%";
+  $("mCutoff").textContent = secs(m.calculated_cutoff);
+  $("mCpSize").textContent = fmtBytes(m.checkpoint_size_bytes);
+  $("mReplMsgs").textContent = Number(m.messages_replayed || 0).toLocaleString();
+  $("mDups").textContent = Number(m.duplicates_detected || 0).toLocaleString();
+  $("mCpPath").textContent = m.checkpoint_path || "–";
+  $("mCpPath").title = m.checkpoint_path || "";
+  $("rawJson").textContent = JSON.stringify(m, null, 2);
+  $("modalBackdrop").classList.add("open");
+}
+function closeModal() { $("modalBackdrop").classList.remove("open"); }
+$("modalCloseBtn").addEventListener("click", closeModal);
+$("modalBackdrop").addEventListener("click", function (ev) { if (ev.target === this) closeModal(); });
+document.addEventListener("keydown", function (ev) {
+  if (ev.key === "Escape") closeModal();
+  if ((ev.key === "r" || ev.key === "R") && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) refresh();
+});
+$("copyJsonBtn").addEventListener("click", function () {
+  var text = $("rawJson").textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function () { toast("Snapshot JSON copied to clipboard", "ok"); });
+  }
+});
+
+/* ---------- polling ---------- */
+var isRefreshing = false, lastState = {};
+async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  var syncIcon = $("syncIcon");
+  syncIcon.style.animation = "spin 0.6s linear infinite";
   try {
-    var r = await fetch("/migrations", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    var results = await Promise.all([fetch("/migrations"), fetch("/metrics")]);
+    if (!results[0].ok || !results[1].ok) throw new Error("API unavailable");
+    var list = await results[0].json();
+    var metrics = parseMetrics(await results[1].text());
+
+    lastMigrations = list || [];
+    $("link").classList.remove("offline");
+    $("linkText").textContent = "connected";
+
+    var total = Number(metrics.migration_total || 0);
+    var success = Number(metrics.migration_success_total || 0);
+    var pct = total ? (success / total) * 100 : 0;
+    $("ringNum").textContent = pct.toFixed(0);
+    $("ringVal").style.strokeDashoffset = (314.16 - (314.16 * pct) / 100).toFixed(2);
+    $("ringTotals").textContent = success + " / " + total + " Completed";
+
+    var activeMig = latestActive(lastMigrations);
+    renderFlow(activeMig ? activeMig.state : "IDLE");
+    renderCards(metrics);
+    updateSparklines(metrics);
+    renderRows(lastMigrations);
+    renderStage(activeMig, metrics);
+
+    var key = activeMig ? activeMig.migration_id + ":" + activeMig.state : "idle";
+    if (lastState[key] === undefined) {
+      lastState = {};
+      lastState[key] = 1;
+      if (activeMig) {
+        logEvent("PHASE", activeMig.migration_id + " → " + activeMig.state, activeMig.state === "COMPLETED" ? "ok" : (activeMig.state === "FAILED" ? "err" : ""));
+        if (activeMig.state === "COMPLETED") playSound("done");
+        if (activeMig.state === "FAILED") playSound("alert");
+      }
+    }
+  } catch (e) {
+    $("link").classList.add("offline");
+    $("linkText").textContent = "offline";
+    logEvent("ERROR", "Failed to reach /migrations or /metrics", "err");
+  } finally {
+    isRefreshing = false;
+    syncIcon.style.animation = "none";
+  }
+}
+
+var timerId = null;
+function resetTimer() {
+  if (timerId) clearInterval(timerId);
+  var interval = Number($("refreshRate").value || 2500);
+  if (interval > 0) timerId = setInterval(refresh, interval);
+}
+$("refreshRate").addEventListener("change", function () {
+  resetTimer();
+  toast("Poll interval " + (Number(this.value) > 0 ? (Number(this.value) / 1000) + "s" : "paused"), "ok");
+});
+$("manualSyncBtn").addEventListener("click", function () { playSound("click"); refresh(); });
+
+/* ---------- start / cancel ---------- */
+$("startForm").addEventListener("submit", async function (ev) {
+  ev.preventDefault();
+  var btn = $("startBtn");
+  var data = Object.fromEntries(new FormData(ev.target).entries());
+  btn.disabled = true;
+  btn.classList.add("loading");
+  playSound("start");
+  try {
+    var res = await fetch("/migrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
     });
-    var text = await r.text();
-    if (!r.ok) throw new Error(text.trim());
-    var data = JSON.parse(text);
-    setFlash("Started " + data.migration_id + " (" + data.status + ")", false);
-    refresh();
-  } catch (err) {
-    setFlash("Start failed: " + err.message, true);
+    if (!res.ok) throw new Error(await res.text());
+    var respJson = await res.json().catch(function () { return {}; });
+    toast("Migration initiated: " + (respJson.migration_id || data.source_pod), "ok");
+    logEvent("STARTED", "Initiated migration for " + data.source_pod + " ➔ " + data.target_node, "ok");
+    lastState = {};
+    ev.target.reset();
+    $("inputNamespace").value = "default";
+    await refresh();
+  } catch (e) {
+    toast(e.message || "Unable to start migration", "err");
+    logEvent("REJECTED", e.message || "Failed to initiate migration", "err");
+    playSound("alert");
   } finally {
     btn.disabled = false;
+    btn.classList.remove("loading");
   }
 });
 
-// Cancel buttons: POST /migrations/{id}/cancel. The workflow rolls back on its own.
-document.getElementById("rows").addEventListener("click", async function (ev) {
-  var id = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-cancel");
-  if (!id) return;
-  ev.target.disabled = true;
+async function cancelMigration(migId, btn) {
+  if (!migId) return;
+  if (btn) btn.disabled = true;
+  playSound("click");
   try {
-    var r = await fetch("/migrations/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
-    var text = await r.text();
-    if (!r.ok) throw new Error(text.trim());
-    setFlash("Cancel requested for " + id + ". It will roll back.", false);
-  } catch (err) {
-    setFlash("Cancel failed: " + err.message, true);
+    var res = await fetch("/migrations/" + encodeURIComponent(migId) + "/cancel", { method: "POST" });
+    if (!res.ok) throw new Error(await res.text());
+    toast("Cancellation requested for " + migId, "ok");
+    logEvent("CANCEL", "Cancellation sent for " + migId, "");
+    lastState = {};
+    await refresh();
+  } catch (e) {
+    toast(e.message || "Unable to cancel migration", "err");
+    logEvent("CANCEL_ERR", e.message, "err");
+    playSound("alert");
+    if (btn) btn.disabled = false;
   }
-  refresh();
+}
+$("heroCancelBtn").addEventListener("click", function () { cancelMigration(this.dataset.cancel, this); });
+
+$("rows").addEventListener("click", function (ev) {
+  var cancelBtn = ev.target.closest("[data-cancel]");
+  if (cancelBtn) { cancelMigration(cancelBtn.dataset.cancel, cancelBtn); return; }
+  var inspectBtn = ev.target.closest("[data-inspect]");
+  if (inspectBtn) { openInspector(inspectBtn.dataset.inspect); return; }
+  var tr = ev.target.closest("tr[data-row-id]");
+  if (tr) openInspector(tr.dataset.rowId);
 });
 
-setInterval(function () {
-  document.getElementById("clock").textContent = new Date().toLocaleTimeString();
-}, 1000);
+$("filterTabs").addEventListener("click", function (ev) {
+  var tab = ev.target.closest(".filter-tab");
+  if (!tab) return;
+  playSound("click");
+  document.querySelectorAll(".filter-tab").forEach(function (t) { t.classList.remove("active"); });
+  tab.classList.add("active");
+  currentFilter = tab.dataset.filter;
+  renderRows(lastMigrations);
+});
+$("searchInput").addEventListener("input", function (ev) {
+  currentSearch = ev.target.value.trim();
+  renderRows(lastMigrations);
+});
+document.querySelectorAll(".quick-chip").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    playSound("click");
+    $("inputSourcePod").value = this.dataset.pod;
+    $("inputNamespace").value = this.dataset.ns || "default";
+    $("inputTargetNode").value = this.dataset.node;
+    $("startForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    toast("Preset loaded: " + this.dataset.pod, "ok");
+  });
+});
+
+/* ---------- clock + lifecycle stepper in hero ---------- */
+function tickClock() {
+  $("clock").textContent = new Date().toISOString().substring(11, 19) + " UTC";
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+/* lifecycle stepper lives under the hero copy */
+(function mountFlow() {
+  var host = document.querySelector(".hero-copy");
+  if (!host) return;
+  var wrap = document.createElement("div");
+  wrap.className = "flow-wrap";
+  wrap.innerHTML = '<div class="flow-title">Handoff pipeline lifecycle</div><div class="flow" id="flow"></div>';
+  host.appendChild(wrap);
+  setInterval(function () {
+    var mig = latestActive(lastMigrations);
+    renderFlow(mig ? mig.state : "IDLE");
+  }, 1000);
+})();
+
 refresh();
-setInterval(refresh, 2500);
+resetTimer();
 </script>
+<!--END-->
 </body>
 </html>
-
-  .card .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--blue-300), var(--blue-500)); transition: width .8s ease; box-shadow: 0 0 10px var(--blue-500); }
